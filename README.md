@@ -9,6 +9,7 @@ Precision-first webapp for publication counting from PMID lists with author disa
   - Step 2 (conditional): citation-level include/exclude (year, journal, title) only when ambiguity remains after Step 1
   - Step 3 (optional): review only uncertain citations
   - Final: one-line summary + citation table
+- PMID input supports both pasted text and optional `.txt` file upload (one PMID per line).
 - Uses PubMed metadata for citation details and print dates.
 - Uses PMC XML as the primary source for author-level metadata (author list, affiliations, co-first/co-senior notes).
 - Falls back to PubMed author/order data only when PMC is unavailable or parsing fails, and marks fallback in output.

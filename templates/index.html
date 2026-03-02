@@ -31,7 +31,7 @@
     <h1>Publication Counter</h1>
     <p>Precision-first report generation with optional review for uncertain citations.</p>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <form method="post" action="/disambiguate">
+    <form method="post" action="/disambiguate" enctype="multipart/form-data">
       <label for="author_name">Author Name</label>
       <input id="author_name" name="author_name" value="{{ author_name }}" required>
 
@@ -47,7 +47,10 @@
       </div>
 
       <label for="pmids">PMID List</label>
-      <textarea id="pmids" name="pmids" rows="10" placeholder="One PMID per line, or pasted text containing PMIDs" required>{{ pmids }}</textarea>
+      <textarea id="pmids" name="pmids" rows="10" placeholder="One PMID per line, or pasted text containing PMIDs">{{ pmids }}</textarea>
+
+      <label for="pmid_file">PMID File (optional)</label>
+      <input id="pmid_file" name="pmid_file" type="file" accept=".txt,text/plain">
 
       <label>
         <input type="checkbox" name="peer_reviewed_only" value="1" {% if peer_reviewed_only %}checked{% endif %}>

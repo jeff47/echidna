@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -237,6 +237,19 @@ def _sanitize_citation_affiliations(citations: list[Citation]) -> int:
                 author.affiliation = cleaned
                 changed += 1
     return changed
+
+
+def _read_uploaded_text(upload: UploadFile | None) -> str:
+    if upload is None:
+        return ""
+    try:
+        raw = upload.file.read()
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to read uploaded PMID file: filename=%r", upload.filename)
+        return ""
+    if not raw:
+        return ""
+    return raw.decode("utf-8", errors="ignore")
 
 
 def _build_out_of_window_rows(
@@ -510,7 +523,8 @@ def index(request: Request) -> HTMLResponse:
 def disambiguate(
     request: Request,
     author_name: str = Form(...),
-    pmids: str = Form(...),
+    pmids: str = Form(default=""),
+    pmid_file: UploadFile | None = File(default=None),
     start_year: int = Form(...),
     end_year: int = Form(...),
     peer_reviewed_only: str | None = Form(default=None),
@@ -544,7 +558,9 @@ def disambiguate(
             status_code=400,
         )
 
-    parsed_pmids = parse_pmids(pmids)
+    pmid_file_text = _read_uploaded_text(pmid_file)
+    combined_pmids_text = "\n".join(part for part in (pmids, pmid_file_text) if part.strip())
+    parsed_pmids = parse_pmids(combined_pmids_text)
     logger.info("Parsed %d PMID(s) from input", len(parsed_pmids))
     if not parsed_pmids:
         return templates.TemplateResponse(
@@ -557,7 +573,7 @@ def disambiguate(
                 "pmids": pmids,
                 "peer_reviewed_only": peer_reviewed_only_enabled,
                 "extra_excluded_types": extra_excluded_types,
-                "error": "No PMIDs found in input",
+                "error": "No PMIDs found in text input or uploaded file",
             },
             status_code=400,
         )
