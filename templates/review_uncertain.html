@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Uncertain Citations</title>
+  <style>
+    body { font-family: "Source Sans 3", "Segoe UI", sans-serif; margin: 0; background: #f4f5f7; color: #1f2933; }
+    main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: white; border: 1px solid #d9e2ec; border-radius: 12px; padding: 1.25rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #d9e2ec; text-align: left; vertical-align: top; padding: 0.5rem; font-size: 0.95rem; }
+    th { background: #f0f4f8; }
+    button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
+    a { color: #0f766e; text-decoration: none; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Step 2 (Optional): Review Uncertain Citations</h1>
+    <p>These citations were not auto-included because one or more uncertainty checks failed.</p>
+
+    <form method="post" action="/finalize">
+      <input type="hidden" name="run_id" value="{{ run_id }}">
+      <input type="hidden" name="pmid_filter_enabled" value="{{ pmid_filter_enabled }}">
+      {% for cluster_id in selected_cluster_ids %}
+        <input type="hidden" name="selected_cluster_ids" value="{{ cluster_id }}">
+      {% endfor %}
+      {% for pmid in selected_pmids %}
+        <input type="hidden" name="selected_pmids" value="{{ pmid }}">
+      {% endfor %}
+
+      <table>
+        <thead>
+          <tr>
+            <th>Include</th>
+            <th>PMID / PMCID</th>
+            <th>Title</th>
+            <th>Journal</th>
+            <th>Date</th>
+            <th>Authors</th>
+            <th>Counted As</th>
+            <th>Source</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td><input type="checkbox" name="accepted_row_indices" value="{{ row.idx }}"></td>
+              <td>
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
+                {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+              </td>
+              <td>{{ row.title }}</td>
+              <td>{{ row.journal }}</td>
+              <td>{{ row.print_date }}</td>
+              <td>{{ row.authors }}</td>
+              <td>{{ row.counted_as }}</td>
+              <td>{{ row.role_source }}</td>
+              <td>{{ row.notes }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <button type="submit">Generate Final Summary</button>
+    </form>
+  </div>
+</main>
+</body>
+</html>

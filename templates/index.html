@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Publication Counter</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #1f2933;
+      --muted: #52606d;
+      --accent: #0f766e;
+      --border: #d9e2ec;
+    }
+    body { font-family: "Source Sans 3", "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+    h1 { margin-top: 0; }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+    input, textarea { width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    button { margin-top: 1rem; background: var(--accent); color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
+    .error { color: #b42318; margin-top: 0.5rem; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Publication Counter</h1>
+    <p>Precision-first report generation with optional review for uncertain citations.</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post" action="/disambiguate">
+      <label for="author_name">Author Name</label>
+      <input id="author_name" name="author_name" value="{{ author_name }}" required>
+
+      <div class="grid">
+        <div>
+          <label for="start_year">Start Year</label>
+          <input id="start_year" name="start_year" type="number" value="{{ start_year }}" required>
+        </div>
+        <div>
+          <label for="end_year">End Year</label>
+          <input id="end_year" name="end_year" type="number" value="{{ end_year }}" required>
+        </div>
+      </div>
+
+      <label for="pmids">PMID List</label>
+      <textarea id="pmids" name="pmids" rows="10" placeholder="One PMID per line, or pasted text containing PMIDs" required>{{ pmids }}</textarea>
+
+      <button type="submit">Find Author Clusters</button>
+    </form>
+  </div>
+</main>
+</body>
+</html>
