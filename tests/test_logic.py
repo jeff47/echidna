@@ -1,4 +1,12 @@
-from app.logic import analyze_citations, build_clusters, format_summary, match_author, parse_pmids, parse_target_name
+from app.logic import (
+    analyze_citations,
+    build_clusters,
+    citation_matches_excluded_type,
+    format_summary,
+    match_author,
+    parse_pmids,
+    parse_target_name,
+)
 from app.models import Author, Citation
 
 
@@ -10,6 +18,7 @@ def _citation(
     source: str = "pmc",
     co_first: set[int] | None = None,
     co_senior: set[int] | None = None,
+    publication_types: list[str] | None = None,
 ) -> Citation:
     return Citation(
         pmid=pmid,
@@ -20,6 +29,7 @@ def _citation(
         print_date=str(year),
         authors=authors,
         source_for_roles=source,
+        publication_types=publication_types or [],
         co_first_positions=co_first or set(),
         co_senior_positions=co_senior or set(),
     )
@@ -72,6 +82,82 @@ def test_build_clusters_does_not_group_no_affiliation_mentions() -> None:
     assert len(matches) == 2
     assert len(clusters) == 2
     assert all(cluster.mention_count == 1 for cluster in clusters)
+
+
+def test_build_clusters_groups_same_institute_across_different_departments() -> None:
+    target = parse_target_name("Laura Donlin")
+    citations = [
+        _citation(
+            "201",
+            2023,
+            [
+                _author(
+                    1,
+                    "Donlin",
+                    "Laura",
+                    "L",
+                    "Department of Rheumatology, Hospital for Special Surgery, New York, NY",
+                )
+            ],
+        ),
+        _citation(
+            "202",
+            2021,
+            [
+                _author(
+                    1,
+                    "Donlin",
+                    "Laura",
+                    "L",
+                    "Derfner Foundation Precision Medicine Laboratory, Hospital for Special Surgery, New York, NY",
+                )
+            ],
+        ),
+    ]
+    clusters, matches = build_clusters(citations, target)
+
+    assert len(matches) == 2
+    assert len(clusters) == 1
+    assert clusters[0].mention_count == 2
+    assert "Hospital for Special Surgery" in clusters[0].affiliations
+
+
+def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
+    target = parse_target_name("Peter Sage")
+    citations = [
+        _citation(
+            "301",
+            2024,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter T.",
+                    "PT",
+                    "Transplantation Research Center, Renal Division, Brigham and Women's Hospital, Harvard Medical School, Boston, MA, USA",
+                )
+            ],
+        ),
+        _citation(
+            "302",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter T.",
+                    "PT",
+                    "Transplant Research Center, Renal Division, Brigham and Women's Hospital, Harvard Medical School, Boston, MA USA",
+                )
+            ],
+        ),
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    assert len(clusters) == 1
+    assert "Brigham and Women's Hospital" in clusters[0].affiliations
+    assert "Harvard Medical School" in clusters[0].affiliations
+    assert len(clusters[0].affiliations) <= 3
 
 
 def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:
@@ -145,12 +231,12 @@ def test_format_summary_counts_only_included_rows() -> None:
     citation1 = _citation(
         "30",
         2023,
-        [_author(1, "Doe", "Jane", "J", "Inst A"), _author(2, "Smith", "A", "A", "Inst")],
+        [_author(1, "Doe", "Jane", "J", "Example Hospital"), _author(2, "Smith", "A", "A", "Example Hospital")],
     )
     citation2 = _citation(
         "31",
         2023,
-        [_author(1, "Smith", "A", "A", "Inst"), _author(2, "Doe", "Jane", "J", "Inst A")],
+        [_author(1, "Smith", "A", "A", "Example Hospital"), _author(2, "Doe", "Jane", "J", "Example Hospital")],
     )
 
     clusters, matches = build_clusters([citation1, citation2], target)
@@ -163,6 +249,44 @@ def test_format_summary_counts_only_included_rows() -> None:
     )
 
     # Force one exclusion to verify summary behavior.
+    assert len(result.rows) == 2
     result.rows[1].include = False
     summary = format_summary(result.rows, 2021, 2026)
     assert "1 total" in summary
+
+
+def test_citation_matches_excluded_type_detects_preprint_and_editorial() -> None:
+    citation = _citation(
+        "40",
+        2024,
+        [_author(1, "Doe", "Jane", "J", "Inst A")],
+        publication_types=["Preprint", "Journal Article"],
+    )
+    matched, matched_types = citation_matches_excluded_type(citation, ["preprint", "editorial"])
+    assert matched is True
+    assert "preprint" in matched_types
+
+
+def test_review_senior_is_separate_from_overall_total() -> None:
+    target = parse_target_name("Jane Doe")
+    citation = _citation(
+        "41",
+        2024,
+        [_author(1, "Smith", "Amy", "A", "Inst"), _author(2, "Doe", "Jane", "J", "Inst A")],
+        publication_types=["Review"],
+    )
+    clusters, matches = build_clusters([citation], target)
+    result = analyze_citations(
+        citations=[citation],
+        matches=matches,
+        selected_cluster_ids={clusters[0].cluster_id},
+        start_year=2021,
+        end_year=2026,
+    )
+    assert len(result.rows) == 1
+    row = result.rows[0]
+    assert row.counted_overall is False
+    assert row.counted_review_senior is True
+    summary = format_summary(result.rows, 2021, 2026)
+    assert "0 total" in summary
+    assert "1 review(s) as Sr author" in summary

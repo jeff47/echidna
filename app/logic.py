@@ -9,6 +9,50 @@ from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, Target
 
 NON_ALPHA_NUM = re.compile(r"[^a-z0-9]+")
 FOUR_DIGIT_YEAR = re.compile(r"(19|20)\d{2}")
+EXCLUDED_TYPE_KEYWORDS = (
+    "preprint",
+    "editorial",
+    "comment",
+    "letter",
+    "news",
+    "newspaper article",
+    "published erratum",
+    "retraction of publication",
+    "retracted publication",
+    "expression of concern",
+    "corrected and republished article",
+    "patient education handout",
+)
+UNIT_PREFIX_PATTERN = re.compile(
+    r"^(department|departments|division|center|centre|laboratory|lab|program|section|unit|faculty)\b",
+    flags=re.IGNORECASE,
+)
+TRAILING_PUNCT = re.compile(r"[.;,\s]+$")
+INSTITUTION_HINTS = (
+    "university",
+    "hospital",
+    "institute",
+    "college",
+    "school",
+    "clinic",
+    "health",
+)
+SECONDARY_INSTITUTION_HINTS = (
+    "medicine",
+    "foundation",
+)
+UNIT_WORDS = (
+    "department",
+    "departments",
+    "division",
+    "center",
+    "centre",
+    "laboratory",
+    "lab",
+    "program",
+    "section",
+    "unit",
+)
 
 
 def normalize_token(value: str) -> str:
@@ -52,6 +96,51 @@ def parse_year(pub_date: str) -> int | None:
     return int(match.group(0))
 
 
+def normalize_publication_type(value: str) -> str:
+    return normalize_text(value)
+
+
+def parse_type_terms(raw_text: str) -> list[str]:
+    terms = [normalize_publication_type(part) for part in re.split(r"[,\n;]+", raw_text) if part.strip()]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term in seen:
+            continue
+        seen.add(term)
+        deduped.append(term)
+    return deduped
+
+
+def default_excluded_type_terms() -> list[str]:
+    return list(EXCLUDED_TYPE_KEYWORDS)
+
+
+def citation_matches_excluded_type(citation: Citation, excluded_terms: list[str]) -> tuple[bool, list[str]]:
+    normalized_types = [normalize_publication_type(value) for value in citation.publication_types]
+    matched: list[str] = []
+    for pub_type in normalized_types:
+        for term in excluded_terms:
+            if term and term in pub_type:
+                matched.append(pub_type)
+                break
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in matched:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return bool(deduped), deduped
+
+
+def is_review_article(citation: Citation) -> bool:
+    for pub_type in citation.publication_types:
+        if "review" in normalize_publication_type(pub_type):
+            return True
+    return False
+
+
 def match_author(author: Author, target: TargetName) -> tuple[bool, str | None]:
     if normalize_token(author.last_name) != target.surname:
         return False, None
@@ -78,10 +167,55 @@ def match_author(author: Author, target: TargetName) -> tuple[bool, str | None]:
 
 
 def affiliation_fingerprint(affiliation: str) -> str:
-    cleaned = normalize_text(affiliation)
-    if not cleaned:
+    institutions = _extract_institution_names(affiliation)
+    if not institutions:
         return "no-affiliation"
-    return cleaned[:80]
+    return "|".join(normalize_text(name) for name in institutions)[:120]
+
+
+def _extract_institution_names(affiliation: str) -> list[str]:
+    pieces = [piece.strip() for piece in affiliation.split(";") if piece.strip()]
+    names: list[str] = []
+    seen_keys: set[str] = set()
+    for piece in pieces:
+        candidates = _institution_candidates(piece)
+        if not candidates:
+            continue
+        strong = [c for c in candidates if c[0] >= 3]
+        selected = strong or [max(candidates, key=lambda item: item[0])]
+        for _, key, label in selected:
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            names.append(label)
+    return names
+
+
+def _institution_candidates(piece: str) -> list[tuple[int, str, str]]:
+    clauses = [clause.strip() for clause in piece.split(",") if clause.strip()]
+    candidates: list[tuple[int, str, str]] = []
+    for clause in clauses:
+        display = _clean_clause_label(clause)
+        normalized = normalize_text(display)
+        if not normalized:
+            continue
+        if UNIT_PREFIX_PATTERN.match(normalized):
+            continue
+        score = 0
+        if any(hint in normalized for hint in INSTITUTION_HINTS):
+            score += 3
+        if any(hint in normalized for hint in SECONDARY_INSTITUTION_HINTS):
+            score += 1
+        if any(word in normalized for word in UNIT_WORDS):
+            score -= 2
+        if score <= 0:
+            continue
+        candidates.append((score, normalized, display))
+    return candidates
+
+
+def _clean_clause_label(clause: str) -> str:
+    return TRAILING_PUNCT.sub("", " ".join(clause.split()))
 
 
 def build_clusters(citations: list[Citation], target: TargetName) -> tuple[list[Cluster], list[AuthorMatch]]:
@@ -118,7 +252,7 @@ def build_clusters(citations: list[Citation], target: TargetName) -> tuple[list[
                 if citation.pmid == cm.pmid and citation.print_year is not None
             }
         )
-        affiliations = sorted({m.author.affiliation for m in cluster_matches if m.author.affiliation})
+        affiliations = _cluster_affiliation_labels(cluster_matches)
         exemplar = cluster_matches[0].author
         label = f"{exemplar.last_name}, {exemplar.fore_name or exemplar.initials}"
         clusters.append(
@@ -133,6 +267,20 @@ def build_clusters(citations: list[Citation], target: TargetName) -> tuple[list[
 
     clusters.sort(key=lambda c: c.mention_count, reverse=True)
     return clusters, matches
+
+
+def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
+    seen: set[str] = set()
+    labels: list[str] = []
+    for match in matches:
+        for name in _extract_institution_names(match.author.affiliation):
+            key = normalize_text(name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            labels.append(name)
+    labels.sort(key=str.lower)
+    return labels
 
 
 def citation_in_window(citation: Citation, start_year: int, end_year: int) -> bool:
@@ -188,12 +336,16 @@ def analyze_citations(
 
         counted_first = bool(first_positions & selected_positions)
         counted_senior = bool(senior_positions & selected_positions)
+        review_article = is_review_article(citation)
+        counted_review_senior = review_article and counted_senior
 
         row = ReportRow(
             citation=citation,
-            counted_overall=True,
+            counted_overall=not review_article,
             counted_first=counted_first,
             counted_senior=counted_senior,
+            counted_review_senior=counted_review_senior,
+            is_review=review_article,
             uncertainty_reasons=reasons,
             include=not reasons,
         )
@@ -218,18 +370,12 @@ def format_summary(
     end_year: int,
 ) -> str:
     included = [r for r in rows if r.include]
-    total = len(included)
-    first_senior = [r for r in included if r.counted_first or r.counted_senior]
-
-    by_journal_year: dict[str, int] = defaultdict(int)
-    for row in first_senior:
-        key = f"{row.citation.journal} {row.citation.print_year or 'n/a'}"
-        by_journal_year[key] += 1
-
-    fragments = [f"{count} {label}" for label, count in sorted(by_journal_year.items(), key=lambda x: (-x[1], x[0]))]
-    detail = "; ".join(fragments) if fragments else "none"
-
+    overall_included = [r for r in included if r.counted_overall]
+    total = len(overall_included)
+    first_senior = [r for r in overall_included if r.counted_first or r.counted_senior]
+    review_senior_total = sum(1 for r in included if r.counted_review_senior)
     return (
-        f"Publications ({start_year}-{end_year}): {total} total, "
-        f"{len(first_senior)} 1st/Sr author ({detail})"
+        f"Peer-reviewed Publications ({start_year}-{end_year}): {total} total, "
+        f"{len(first_senior)} 1st/Sr author. "
+        f"In addition: {review_senior_total} review(s) as Sr author"
     )

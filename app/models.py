@@ -23,6 +23,7 @@ class Citation:
     print_date: str
     authors: list[Author]
     source_for_roles: Literal["pmc", "pubmed"]
+    publication_types: list[str] = field(default_factory=list)
     co_first_positions: set[int] = field(default_factory=set)
     co_senior_positions: set[int] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
@@ -60,5 +61,7 @@ class ReportRow:
     counted_overall: bool
     counted_first: bool
     counted_senior: bool
+    counted_review_senior: bool = False
+    is_review: bool = False
     uncertainty_reasons: list[str] = field(default_factory=list)
     include: bool = True

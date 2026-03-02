@@ -29,6 +29,9 @@
     {% if excluded_out_of_window and excluded_out_of_window > 0 %}
       <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window.</p>
     {% endif %}
+    {% if excluded_by_type and excluded_by_type > 0 %}
+      <p class="muted">{{ excluded_by_type }} citation(s) were excluded by publication-type filter.</p>
+    {% endif %}
 
     {% if errors %}
       <p class="error">Some retrieval errors occurred: {{ errors|join('; ') }}</p>

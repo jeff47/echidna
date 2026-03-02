@@ -19,12 +19,15 @@ from app.logic import (
     analyze_citations,
     build_clusters,
     citation_in_window,
+    citation_matches_excluded_type,
+    default_excluded_type_terms,
     format_summary,
+    parse_type_terms,
     parse_pmids,
     parse_target_name,
 )
 from app.models import AuthorMatch, Citation, Cluster
-from app.ncbi import NcbiClient, split_chunks
+from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
 
 logging.basicConfig(
     level=os.getenv("PMCPARSER_LOG_LEVEL", "INFO").upper(),
@@ -43,6 +46,8 @@ class RunState:
     author_name: str
     start_year: int
     end_year: int
+    peer_reviewed_only: bool
+    excluded_type_terms: list[str]
     citations: list[Citation]
     clusters: list[Cluster]
     matches: list[AuthorMatch]
@@ -59,11 +64,17 @@ def _to_author_list(citation: Citation) -> str:
 def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for idx, row in enumerate(analysis.rows):
-        cited_as: list[str] = ["overall"]
+        cited_as: list[str] = []
+        if row.counted_overall:
+            cited_as.append("overall")
         if row.counted_first:
             cited_as.append("first")
         if row.counted_senior:
             cited_as.append("senior")
+        if row.counted_review_senior:
+            cited_as.append("review_senior")
+        if row.is_review and not row.counted_overall:
+            cited_as.append("review_excluded_from_total")
         rows.append(
             {
                 "idx": idx,
@@ -75,10 +86,16 @@ def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]
                 "journal": row.citation.journal,
                 "print_date": row.citation.print_date,
                 "authors": _to_author_list(row.citation),
-                "counted_as": ", ".join(cited_as),
+                "publication_types": ", ".join(row.citation.publication_types) if row.citation.publication_types else "(unknown)",
+                "counted_as": ", ".join(cited_as) if cited_as else "none",
                 "role_source": row.citation.source_for_roles,
                 "notes": "; ".join(row.citation.notes + row.uncertainty_reasons),
                 "include": row.include,
+                "status_label": (
+                    "included (review separate)"
+                    if row.include and not row.counted_overall and row.is_review
+                    else ("included" if row.include else "excluded")
+                ),
             }
         )
     return rows
@@ -132,6 +149,7 @@ def _build_citation_selection_rows(
                 "journal": citation.journal,
                 "title": citation.title,
                 "source_for_roles": citation.source_for_roles,
+                "publication_types": ", ".join(citation.publication_types) if citation.publication_types else "(unknown)",
                 "cluster_labels": set(),
                 "affiliations": set(),
                 "positions": set(),
@@ -163,6 +181,7 @@ def _build_citation_selection_rows(
                 "journal": row["journal"],
                 "title": row["title"],
                 "source_for_roles": row["source_for_roles"],
+                "publication_types": row["publication_types"],
                 "cluster_labels": " | ".join(sorted(row["cluster_labels"])),
                 "affiliations": " | ".join(sorted(row["affiliations"])) if row["affiliations"] else "(no affiliation listed)",
                 "notes": "; ".join(sorted(row["notes"])),
@@ -206,6 +225,18 @@ def _build_cluster_citation_rows(
         rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
         rendered[cluster_id] = rows
     return rendered
+
+
+def _sanitize_citation_affiliations(citations: list[Citation]) -> int:
+    changed = 0
+    for citation in citations:
+        for author in citation.authors:
+            original = author.affiliation or ""
+            cleaned = _normalize_affiliation_text(original)
+            if cleaned != original:
+                author.affiliation = cleaned
+                changed += 1
+    return changed
 
 
 def _build_out_of_window_rows(
@@ -283,6 +314,8 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
         "author_name": run.author_name,
         "start_year": run.start_year,
         "end_year": run.end_year,
+        "peer_reviewed_only": run.peer_reviewed_only,
+        "excluded_type_terms": list(run.excluded_type_terms),
         "citations": [_serialize_citation(citation) for citation in run.citations],
         "clusters": [_serialize_cluster(cluster) for cluster in run.clusters],
         "matches": [_serialize_match(match) for match in run.matches],
@@ -294,6 +327,8 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
         author_name=str(payload["author_name"]),
         start_year=int(payload["start_year"]),
         end_year=int(payload["end_year"]),
+        peer_reviewed_only=bool(payload.get("peer_reviewed_only", False)),
+        excluded_type_terms=[str(v) for v in payload.get("excluded_type_terms", [])],
         citations=[_deserialize_citation(item) for item in payload.get("citations", [])],
         clusters=[_deserialize_cluster(item) for item in payload.get("clusters", [])],
         matches=[_deserialize_match(item) for item in payload.get("matches", [])],
@@ -331,6 +366,7 @@ def _serialize_citation(citation: Citation) -> dict[str, Any]:
         "print_year": citation.print_year,
         "print_date": citation.print_date,
         "authors": [_serialize_author(author) for author in citation.authors],
+        "publication_types": list(citation.publication_types),
         "source_for_roles": citation.source_for_roles,
         "co_first_positions": sorted(citation.co_first_positions),
         "co_senior_positions": sorted(citation.co_senior_positions),
@@ -347,6 +383,7 @@ def _deserialize_citation(payload: dict[str, Any]) -> Citation:
         print_year=payload.get("print_year"),
         print_date=str(payload.get("print_date", "")),
         authors=[_deserialize_author(item) for item in payload.get("authors", [])],
+        publication_types=[str(v) for v in payload.get("publication_types", [])],
         source_for_roles=str(payload.get("source_for_roles", "pubmed")),  # type: ignore[arg-type]
         co_first_positions={int(v) for v in payload.get("co_first_positions", [])},
         co_senior_positions={int(v) for v in payload.get("co_senior_positions", [])},
@@ -462,6 +499,8 @@ def index(request: Request) -> HTMLResponse:
             "start_year": year - 5,
             "end_year": year,
             "pmids": "",
+            "peer_reviewed_only": True,
+            "extra_excluded_types": "",
             "error": None,
         },
     )
@@ -474,12 +513,18 @@ def disambiguate(
     pmids: str = Form(...),
     start_year: int = Form(...),
     end_year: int = Form(...),
+    peer_reviewed_only: str | None = Form(default=None),
+    extra_excluded_types: str = Form(default=""),
 ) -> HTMLResponse:
+    peer_reviewed_only_enabled = peer_reviewed_only is not None
+    excluded_type_terms = default_excluded_type_terms()
+    excluded_type_terms.extend(parse_type_terms(extra_excluded_types))
     logger.info(
-        "Disambiguation request received: author=%r, start_year=%d, end_year=%d",
+        "Disambiguation request received: author=%r, start_year=%d, end_year=%d, peer_reviewed_only=%s",
         author_name,
         start_year,
         end_year,
+        peer_reviewed_only_enabled,
     )
     try:
         target = parse_target_name(author_name)
@@ -492,6 +537,8 @@ def disambiguate(
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
+                "peer_reviewed_only": peer_reviewed_only_enabled,
+                "extra_excluded_types": extra_excluded_types,
                 "error": str(exc),
             },
             status_code=400,
@@ -508,6 +555,8 @@ def disambiguate(
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
+                "peer_reviewed_only": peer_reviewed_only_enabled,
+                "extra_excluded_types": extra_excluded_types,
                 "error": "No PMIDs found in input",
             },
             status_code=400,
@@ -521,6 +570,9 @@ def disambiguate(
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc))
             logger.exception("Chunk fetch failed for %d PMID(s)", len(chunk))
+    cleaned_affiliations = _sanitize_citation_affiliations(citations)
+    if cleaned_affiliations:
+        logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
 
     in_window_citations = [
         citation
@@ -528,10 +580,22 @@ def disambiguate(
         if citation_in_window(citation, start_year, end_year)
     ]
     excluded_out_of_window = len(citations) - len(in_window_citations)
+    excluded_by_type = 0
+    if peer_reviewed_only_enabled:
+        type_filtered: list[Citation] = []
+        for citation in in_window_citations:
+            is_excluded, matched_types = citation_matches_excluded_type(citation, excluded_type_terms)
+            if is_excluded:
+                excluded_by_type += 1
+                citation.notes.append(f"Excluded by publication type filter: {', '.join(matched_types)}")
+                continue
+            type_filtered.append(citation)
+        in_window_citations = type_filtered
     logger.info(
-        "Window filter applied before disambiguation: in_window=%d, excluded_out_of_window=%d",
+        "Window/type filters before disambiguation: in_window=%d, excluded_out_of_window=%d, excluded_by_type=%d",
         len(in_window_citations),
         excluded_out_of_window,
+        excluded_by_type,
     )
 
     clusters, matches = build_clusters(in_window_citations, target)
@@ -575,6 +639,8 @@ def disambiguate(
             author_name=author_name,
             start_year=start_year,
             end_year=end_year,
+            peer_reviewed_only=peer_reviewed_only_enabled,
+            excluded_type_terms=excluded_type_terms,
             citations=in_window_citations,
             clusters=clusters,
             matches=matches,
@@ -594,6 +660,9 @@ def disambiguate(
             "errors": errors,
             "missing_affiliation_rows": missing_affiliation_rows,
             "excluded_out_of_window": excluded_out_of_window,
+            "excluded_by_type": excluded_by_type,
+            "peer_reviewed_only": peer_reviewed_only_enabled,
+            "extra_excluded_types": extra_excluded_types,
         },
     )
 
@@ -620,6 +689,8 @@ def citation_select(
                 "cluster_citation_rows": cluster_citation_rows,
                 "errors": ["Select at least one author identity cluster."],
                 "missing_affiliation_rows": [],
+                "excluded_out_of_window": 0,
+                "excluded_by_type": 0,
             },
             status_code=400,
         )

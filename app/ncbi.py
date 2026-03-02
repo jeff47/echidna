@@ -231,6 +231,7 @@ class NcbiClient:
                     print_year=parse_year(pub_date),
                     print_date=pub_date,
                     authors=authors,
+                    publication_types=_find_publication_types(article),
                     source_for_roles="pubmed",
                 )
             )
@@ -403,6 +404,24 @@ def _find_authors(article: ET.Element) -> list[Author]:
     return authors
 
 
+def _find_publication_types(article: ET.Element) -> list[str]:
+    values: list[str] = []
+    for node in article.findall(".//Article/PublicationTypeList/PublicationType"):
+        text = _clean_text("".join(node.itertext()))
+        if text:
+            values.append(text)
+    # Preserve order while deduplicating.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(value)
+    return ordered
+
+
 def _extract_pmc_affiliation_maps(context: ET.Element) -> tuple[dict[str, str], dict[str, str]]:
     by_id: dict[str, str] = {}
     by_label: dict[str, str] = {}
@@ -511,11 +530,17 @@ def _clean_text(value: str) -> str:
 
 def _normalize_affiliation_text(value: str) -> str:
     cleaned = _clean_text(value)
+    cleaned = _strip_affiliation_identifiers(cleaned)
+    cleaned = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", cleaned)
+    cleaned = _strip_segment_prefix_markers(cleaned)
     # Common legacy formatting artifacts: "1Department", "and2 Department".
     cleaned = re.sub(r"\band(?=\d)", "and ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"(?<![A-Za-z0-9])(\d+)(?=[A-Za-z])", r"\1 ", cleaned)
     # Remove numeric affiliation markers that are typically superscript references.
     cleaned = re.sub(r"(^|[;,\(\[]\s*|\band\s+)\d+\s+(?=[A-Za-z])", r"\1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(\d+)\s+(st|nd|rd|th)\b", r"\1\2", cleaned, flags=re.IGNORECASE)
+    cleaned = _clean_text(cleaned)
+    cleaned = _strip_segment_prefix_markers(cleaned)
     cleaned = _clean_text(cleaned)
     cleaned = _collapse_merged_department_markers(cleaned)
     cleaned = _strip_embedded_numbered_affiliation_tail(cleaned)
@@ -548,6 +573,38 @@ def _looks_like_affiliation_text(value: str) -> bool:
     if any(pattern in lowered for pattern in SENIOR_PATTERNS):
         return False
     return any(pattern in lowered for pattern in AFFILIATION_HINT_PATTERNS)
+
+
+def _strip_affiliation_identifiers(value: str) -> str:
+    cleaned = value
+    # External registry identifiers are not useful as affiliation labels in report output.
+    cleaned = re.sub(r"https?://ror\.org/[^\s;,.]+", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"(^|;)\s*grid\s*[\.:]\s*(?:\d+(?:[.\s]\d+)*)?\s*",
+        r"\1 ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\bgrid\s*\.\s*(?:\d+(?:\s+\d+)*(?:\.\s*\d+(?:\s+\d+)*)*)?",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\bgrid\s*[\.:]\s*(?:\d+(?:[.\s]\d+)*)?", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(?:orcid|orcid id)[:\s]*\d{4}(?:[-\s]\d{4}){2,3}\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b\d{4}(?:\s+\d{4}){2,3}\b", " ", cleaned)
+    # Drop compact identifier fragments stuck onto institution names (e.g. zjqec80HSS).
+    cleaned = re.sub(r"\b[0-9a-z]{7,}(?=[A-Z])", " ", cleaned)
+    cleaned = re.sub(r"\b\d+(?:\.\d+)+\b", " ", cleaned)
+    cleaned = re.sub(r"(^|;)\s*[.,]+\s*", r"\1 ", cleaned)
+    return cleaned
+
+
+def _strip_segment_prefix_markers(value: str) -> str:
+    # Remove single-letter segment markers (e.g. aHospital, XWeill) only at segment starts.
+    # Restrict to lowercase letters and uppercase X marker to avoid stripping real acronyms (e.g. HSS).
+    return re.sub(r"(^|[;,.])\s*(?:[a-z]|X)\s*(?=[A-Z])", r"\1 ", value)
 
 
 def _strip_embedded_numbered_affiliation_tail(value: str) -> str:

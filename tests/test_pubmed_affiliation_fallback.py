@@ -123,3 +123,48 @@ def test_normalize_affiliation_text_collapses_merged_department_markers() -> Non
         "Department of Microbiology and Immunology, "
         "Albert Einstein College of Medicine, Bronx, New York, USA"
     )
+
+
+def test_normalize_affiliation_text_strips_grid_and_marker_prefixes() -> None:
+    raw = (
+        "grid.5386.8000000041936877 XWeill Cornell Medicine, New York, NY USA; "
+        "grid.239915.50000 0001 2285 8823 Hospital for Special Surgery, E 70 th Street, New York, NY 10021 USA"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "grid." not in normalized.lower()
+    assert "XWeill" not in normalized
+    assert "grid." not in normalized.lower()
+    assert "0001 2285 8823" not in normalized
+    assert "Weill Cornell Medicine" in normalized
+    assert "E 70th Street" in normalized
+
+
+def test_normalize_affiliation_text_strips_ror_url_and_id_fragments() -> None:
+    raw = (
+        "https://ror.org/03 zjqec80HSS Research Institute, Hospital for Special Surgery New York United States; "
+        "https://ror.org/02 r109517Immunology and Microbial Pathogenesis Program, Weill Cornell Medicine New York United States"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "https://ror.org" not in normalized
+    assert "zjqec80" not in normalized
+    assert "r109517" not in normalized
+    assert "HSS Research Institute" in normalized
+    assert "Immunology and Microbial Pathogenesis Program" in normalized
+
+
+def test_normalize_affiliation_text_removes_single_letter_prefix_with_space() -> None:
+    raw = "a Hospital for Special Surgery, Department of Rheumatology, E 70 th St, New York, NY 10021"
+    normalized = _normalize_affiliation_text(raw)
+    assert normalized.startswith("Hospital for Special Surgery")
+    assert not normalized.startswith("a ")
+
+
+def test_normalize_affiliation_text_strips_grid_artifacts_from_donlin_examples() -> None:
+    raw = (
+        "grid. 0001 2285 8823 Hospital for Special Surgery, E 70th Street, New York, NY 10009 USA; "
+        "grid.5386. Weill Cornell Medicine, New York, NY USA"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "grid" not in normalized.lower()
+    assert normalized.startswith("Hospital for Special Surgery")
+    assert "; Weill Cornell Medicine" in normalized

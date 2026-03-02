@@ -40,6 +40,7 @@
             <th>Journal</th>
             <th>Title</th>
             <th>PMID / PMCID</th>
+            <th>Publication Type(s)</th>
             <th>Matched Cluster(s)</th>
             <th>Affiliation</th>
             <th>In Window</th>
@@ -58,6 +59,7 @@
                 <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
               </td>
+              <td>{{ row.publication_types }}</td>
               <td>{{ row.cluster_labels }}</td>
               <td>{{ row.affiliations }}</td>
               <td>{% if row.in_window %}yes{% else %}no{% endif %}</td>

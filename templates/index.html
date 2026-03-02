@@ -49,6 +49,14 @@
       <label for="pmids">PMID List</label>
       <textarea id="pmids" name="pmids" rows="10" placeholder="One PMID per line, or pasted text containing PMIDs" required>{{ pmids }}</textarea>
 
+      <label>
+        <input type="checkbox" name="peer_reviewed_only" value="1" {% if peer_reviewed_only %}checked{% endif %}>
+        Peer-reviewed only (exclude preprints, editorials, comments, letters, news, etc.)
+      </label>
+
+      <label for="extra_excluded_types">Extra Publication Types To Exclude (optional)</label>
+      <input id="extra_excluded_types" name="extra_excluded_types" value="{{ extra_excluded_types }}" placeholder="e.g. case reports, congresses">
+
       <button type="submit">Find Author Clusters</button>
     </form>
   </div>
