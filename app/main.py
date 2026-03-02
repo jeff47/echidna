@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import os
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.logic import (
@@ -51,6 +53,8 @@ class RunState:
     citations: list[Citation]
     clusters: list[Cluster]
     matches: list[AuthorMatch]
+    excluded_pmids: set[str]
+    excluded_reasons: dict[str, str]
 
 
 RUNS: dict[str, RunState] = {}
@@ -61,20 +65,77 @@ def _to_author_list(citation: Citation) -> str:
     return ", ".join(f"{a.last_name} {a.initials}".strip() for a in citation.authors)
 
 
+def _default_correction_mode(row: Any) -> str:
+    if not row.include:
+        return "exclude"
+    if row.is_review and row.counted_review_senior:
+        return "review_senior"
+    if row.is_review:
+        return "review"
+    if row.counted_senior:
+        return "senior"
+    if row.counted_overall:
+        return "overall"
+    return "exclude"
+
+
+def _counted_as_category(row: Any) -> str:
+    if row.is_review:
+        return "1st/Sr review" if (row.counted_senior or row.counted_review_senior) else "coauthor review"
+    return "1st/Sr author" if (row.counted_first or row.counted_senior) else "coauthor"
+
+
+def _apply_correction_mode(row: Any, mode: str) -> None:
+    if mode == "exclude":
+        row.include = False
+        row.counted_overall = False
+        row.counted_first = False
+        row.counted_senior = False
+        row.counted_review_senior = False
+        row.is_review = False
+        return
+    if mode == "overall":
+        row.include = True
+        row.counted_overall = True
+        row.counted_first = False
+        row.counted_senior = False
+        row.counted_review_senior = False
+        row.is_review = False
+        return
+    if mode == "senior":
+        row.include = True
+        row.counted_overall = True
+        row.counted_first = False
+        row.counted_senior = True
+        row.counted_review_senior = False
+        row.is_review = False
+        return
+    if mode == "review":
+        row.include = True
+        row.counted_overall = False
+        row.counted_first = False
+        row.counted_senior = False
+        row.counted_review_senior = False
+        row.is_review = True
+        return
+    if mode == "review_senior":
+        row.include = True
+        row.counted_overall = False
+        row.counted_first = False
+        row.counted_senior = True
+        row.counted_review_senior = True
+        row.is_review = True
+        return
+
+
 def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for idx, row in enumerate(analysis.rows):
-        cited_as: list[str] = []
-        if row.counted_overall:
-            cited_as.append("overall")
-        if row.counted_first:
-            cited_as.append("first")
-        if row.counted_senior:
-            cited_as.append("senior")
-        if row.counted_review_senior:
-            cited_as.append("review_senior")
-        if row.is_review and not row.counted_overall:
-            cited_as.append("review_excluded_from_total")
+        counted_as = _counted_as_category(row)
+        counted_as_report = counted_as
+        notes = list(row.citation.notes) + list(row.uncertainty_reasons)
+        if row.forced_include:
+            notes.append("Forced include override from Step 1")
         rows.append(
             {
                 "idx": idx,
@@ -87,9 +148,11 @@ def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]
                 "print_date": row.citation.print_date,
                 "authors": _to_author_list(row.citation),
                 "publication_types": ", ".join(row.citation.publication_types) if row.citation.publication_types else "(unknown)",
-                "counted_as": ", ".join(cited_as) if cited_as else "none",
+                "counted_as": counted_as,
+                "counted_as_report": counted_as_report,
+                "correction_default": _default_correction_mode(row),
                 "role_source": row.citation.source_for_roles,
-                "notes": "; ".join(row.citation.notes + row.uncertainty_reasons),
+                "notes": "; ".join(notes),
                 "include": row.include,
                 "status_label": (
                     "included (review separate)"
@@ -99,6 +162,61 @@ def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]
             }
         )
     return rows
+
+
+def _parse_correction_entries(correction_entries: list[str]) -> dict[str, str]:
+    corrections_by_pmid: dict[str, str] = {}
+    for entry in correction_entries:
+        if "::" not in entry:
+            continue
+        pmid, mode = entry.split("::", 1)
+        pmid = pmid.strip()
+        mode = mode.strip()
+        if not pmid:
+            continue
+        corrections_by_pmid[pmid] = mode
+    return corrections_by_pmid
+
+
+def _rebuild_analysis_with_overrides(
+    *,
+    run: RunState,
+    selected_cluster_ids: set[str],
+    selected_pmids: set[str],
+    selected_excluded_pmids: set[str],
+    pmid_filter_enabled: int,
+    accepted_uncertain_pmids: set[str],
+    correction_entries: list[str],
+) -> tuple[AnalysisResult, list[AuthorMatch]]:
+    filtered_matches = _filter_matches_for_analysis(
+        run=run,
+        selected_cluster_ids=selected_cluster_ids,
+        selected_pmids=selected_pmids,
+        pmid_filter_enabled=pmid_filter_enabled,
+        forced_excluded_pmids=selected_excluded_pmids,
+    )
+    analysis = analyze_citations(
+        citations=run.citations,
+        matches=filtered_matches,
+        selected_cluster_ids=selected_cluster_ids,
+        start_year=run.start_year,
+        end_year=run.end_year,
+        forced_include_pmids=selected_excluded_pmids,
+        excluded_pmids=run.excluded_pmids,
+    )
+
+    for row in analysis.rows:
+        if row.uncertainty_reasons:
+            row.include = row.citation.pmid in accepted_uncertain_pmids
+
+    corrections_by_pmid = _parse_correction_entries(correction_entries)
+    for row in analysis.rows:
+        mode = corrections_by_pmid.get(row.citation.pmid)
+        if not mode:
+            continue
+        _apply_correction_mode(row, mode)
+
+    return analysis, filtered_matches
 
 
 def _missing_affiliation_reason(citation: Citation, affiliation: str) -> str:
@@ -127,11 +245,20 @@ def _build_citation_selection_rows(
     *,
     citations: list[Citation],
     matches: list[AuthorMatch],
+    all_matches: list[AuthorMatch] | None = None,
     cluster_label_by_id: dict[str, str],
     start_year: int,
     end_year: int,
 ) -> list[dict[str, object]]:
+    if all_matches is None:
+        all_matches = matches
+
     citation_by_pmid = {citation.pmid: citation for citation in citations}
+    all_positions_by_pmid: dict[str, set[int]] = {}
+    all_methods_by_pmid: dict[str, set[str]] = {}
+    for match in all_matches:
+        all_positions_by_pmid.setdefault(match.pmid, set()).add(match.position)
+        all_methods_by_pmid.setdefault(match.pmid, set()).add(match.method)
     by_pmid: dict[str, dict[str, object]] = {}
 
     for match in matches:
@@ -164,13 +291,19 @@ def _build_citation_selection_rows(
 
     rendered: list[dict[str, object]] = []
     for row in by_pmid.values():
+        pmid = str(row["pmid"])
+        all_positions = all_positions_by_pmid.get(pmid, set())
+        all_methods = all_methods_by_pmid.get(pmid, set())
         has_no_affiliation = not bool(row["affiliations"])
-        has_multiple_matches = len(row["positions"]) > 1
+        has_multiple_matches = len(all_positions) > 1
+        has_initials_match = "initials" in all_methods
         review_reasons: list[str] = []
         if has_no_affiliation:
             review_reasons.append("No affiliation listed for matched author")
         if has_multiple_matches:
             review_reasons.append("Multiple matched author positions in citation")
+        if has_initials_match:
+            review_reasons.append("Matched by initials fallback")
         rendered.append(
             {
                 "pmid": row["pmid"],
@@ -258,11 +391,16 @@ def _build_out_of_window_rows(
     matches: list[AuthorMatch],
     start_year: int,
     end_year: int,
+    forced_include_pmids: set[str] | None = None,
 ) -> list[dict[str, object]]:
+    if forced_include_pmids is None:
+        forced_include_pmids = set()
     citation_by_pmid = {citation.pmid: citation for citation in citations}
     selected_pmids = {match.pmid for match in matches}
     rows: list[dict[str, object]] = []
     for pmid in selected_pmids:
+        if pmid in forced_include_pmids:
+            continue
         citation = citation_by_pmid.get(pmid)
         if citation is None:
             continue
@@ -281,6 +419,57 @@ def _build_out_of_window_rows(
         )
     rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
     return rows
+
+
+def _build_excluded_citation_rows(
+    *,
+    citations: list[Citation],
+    excluded_pmids: set[str],
+    excluded_reasons: dict[str, str],
+    matches: list[AuthorMatch],
+) -> list[dict[str, object]]:
+    citation_by_pmid = {citation.pmid: citation for citation in citations}
+    matched_pmids = {match.pmid for match in matches}
+    rows: list[dict[str, object]] = []
+    for pmid in sorted(excluded_pmids):
+        if pmid not in matched_pmids:
+            continue
+        citation = citation_by_pmid.get(pmid)
+        if citation is None:
+            continue
+        rows.append(
+            {
+                "pmid": citation.pmid,
+                "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{citation.pmid}/",
+                "pmcid": citation.pmcid,
+                "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{citation.pmcid}/" if citation.pmcid else None,
+                "year": citation.print_year,
+                "journal": citation.journal,
+                "title": citation.title,
+                "reason": excluded_reasons.get(citation.pmid, "Excluded by pre-disambiguation filter"),
+            }
+        )
+    rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    return rows
+
+
+def _filter_matches_for_analysis(
+    *,
+    run: RunState,
+    selected_cluster_ids: set[str],
+    selected_pmids: set[str],
+    pmid_filter_enabled: int,
+    forced_excluded_pmids: set[str],
+) -> list[AuthorMatch]:
+    return [
+        match
+        for match in run.matches
+        if (
+            (match.cluster_id in selected_cluster_ids or match.pmid in forced_excluded_pmids)
+            and (pmid_filter_enabled == 0 or match.pmid in selected_pmids)
+            and (match.pmid not in run.excluded_pmids or match.pmid in forced_excluded_pmids)
+        )
+    ]
 
 
 def _save_run(run_id: str, run: RunState) -> None:
@@ -332,6 +521,8 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
         "citations": [_serialize_citation(citation) for citation in run.citations],
         "clusters": [_serialize_cluster(cluster) for cluster in run.clusters],
         "matches": [_serialize_match(match) for match in run.matches],
+        "excluded_pmids": sorted(run.excluded_pmids),
+        "excluded_reasons": dict(run.excluded_reasons),
     }
 
 
@@ -345,6 +536,8 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
         citations=[_deserialize_citation(item) for item in payload.get("citations", [])],
         clusters=[_deserialize_cluster(item) for item in payload.get("clusters", [])],
         matches=[_deserialize_match(item) for item in payload.get("matches", [])],
+        excluded_pmids={str(v) for v in payload.get("excluded_pmids", [])},
+        excluded_reasons={str(k): str(v) for k, v in dict(payload.get("excluded_reasons", {})).items()},
     )
 
 
@@ -461,6 +654,7 @@ def _render_analysis_result(
     run_id: str,
     selected_cluster_ids: set[str],
     selected_pmids: set[str],
+    selected_excluded_pmids: set[str],
     pmid_filter_enabled: int,
     analysis: AnalysisResult,
     start_year: int,
@@ -482,21 +676,44 @@ def _render_analysis_result(
                 "run_id": run_id,
                 "selected_cluster_ids": sorted(selected_cluster_ids),
                 "selected_pmids": sorted(selected_pmids),
+                "selected_excluded_pmids": sorted(selected_excluded_pmids),
                 "pmid_filter_enabled": pmid_filter_enabled,
                 "rows": uncertain_rows,
             },
         )
 
     summary = format_summary(analysis.rows, start_year, end_year)
+    row_data = _with_row_render_fields(analysis)
+    accepted_uncertain_pmids = sorted(
+        {
+            row.citation.pmid
+            for row in analysis.rows
+            if row.uncertainty_reasons and row.include
+        }
+    )
+    # Final report grouping:
+    # 1) excluded rows
+    # 2) included rows where PMC metadata was unavailable (PubMed fallback)
+    # 3) included rows where PMC author contribution metadata was available
+    excluded_rows = [row for row in row_data if not row["include"]]
+    included_pubmed_rows = [row for row in row_data if row["include"] and row["role_source"] != "pmc"]
+    included_pmc_rows = [row for row in row_data if row["include"] and row["role_source"] == "pmc"]
+    report_rows = excluded_rows + included_pubmed_rows + included_pmc_rows
     return templates.TemplateResponse(
         request,
         "report.html",
         {
             "summary": summary,
-            "rows": _with_row_render_fields(analysis),
+            "rows": report_rows,
             "out_of_window_rows": out_of_window_rows or [],
             "start_year": start_year,
             "end_year": end_year,
+            "run_id": run_id,
+            "selected_cluster_ids": sorted(selected_cluster_ids),
+            "selected_pmids": sorted(selected_pmids),
+            "selected_excluded_pmids": sorted(selected_excluded_pmids),
+            "pmid_filter_enabled": pmid_filter_enabled,
+            "accepted_uncertain_pmids": accepted_uncertain_pmids,
         },
     )
 
@@ -590,13 +807,17 @@ def disambiguate(
     if cleaned_affiliations:
         logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
 
-    in_window_citations = [
-        citation
-        for citation in citations
-        if citation_in_window(citation, start_year, end_year)
-    ]
+    in_window_citations = [citation for citation in citations if citation_in_window(citation, start_year, end_year)]
+    in_window_pmids = {citation.pmid for citation in in_window_citations}
     excluded_out_of_window = len(citations) - len(in_window_citations)
+    excluded_pmids: set[str] = {citation.pmid for citation in citations if citation.pmid not in in_window_pmids}
+    excluded_reasons: dict[str, str] = {
+        citation.pmid: f"Outside year window {start_year}-{end_year}"
+        for citation in citations
+        if citation.pmid not in in_window_pmids
+    }
     excluded_by_type = 0
+    disambiguation_citations = in_window_citations
     if peer_reviewed_only_enabled:
         type_filtered: list[Citation] = []
         for citation in in_window_citations:
@@ -604,22 +825,25 @@ def disambiguate(
             if is_excluded:
                 excluded_by_type += 1
                 citation.notes.append(f"Excluded by publication type filter: {', '.join(matched_types)}")
+                excluded_pmids.add(citation.pmid)
+                excluded_reasons[citation.pmid] = f"Excluded by publication type: {', '.join(matched_types)}"
                 continue
             type_filtered.append(citation)
-        in_window_citations = type_filtered
+        disambiguation_citations = type_filtered
     logger.info(
         "Window/type filters before disambiguation: in_window=%d, excluded_out_of_window=%d, excluded_by_type=%d",
-        len(in_window_citations),
+        len(disambiguation_citations),
         excluded_out_of_window,
         excluded_by_type,
     )
 
-    clusters, matches = build_clusters(in_window_citations, target)
-    citation_by_pmid = {citation.pmid: citation for citation in in_window_citations}
+    clusters, eligible_matches = build_clusters(disambiguation_citations, target)
+    _, all_matches = build_clusters(citations, target)
+    citation_by_pmid = {citation.pmid: citation for citation in disambiguation_citations}
     cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
-    cluster_citation_rows = _build_cluster_citation_rows(citations=in_window_citations, matches=matches)
+    cluster_citation_rows = _build_cluster_citation_rows(citations=disambiguation_citations, matches=eligible_matches)
     missing_affiliation_rows: list[dict[str, object]] = []
-    for match in matches:
+    for match in eligible_matches:
         citation = citation_by_pmid.get(match.pmid)
         if citation is None:
             continue
@@ -640,10 +864,16 @@ def disambiguate(
         if reason:
             missing_affiliation_rows.append(row)
     missing_affiliation_rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    excluded_citation_rows = _build_excluded_citation_rows(
+        citations=citations,
+        excluded_pmids=excluded_pmids,
+        excluded_reasons=excluded_reasons,
+        matches=all_matches,
+    )
     logger.info(
         "Disambiguation computed: citations=%d, matches=%d, clusters=%d, errors=%d",
         len(citations),
-        len(matches),
+        len(all_matches),
         len(clusters),
         len(errors),
     )
@@ -657,9 +887,11 @@ def disambiguate(
             end_year=end_year,
             peer_reviewed_only=peer_reviewed_only_enabled,
             excluded_type_terms=excluded_type_terms,
-            citations=in_window_citations,
+            citations=citations,
             clusters=clusters,
-            matches=matches,
+            matches=all_matches,
+            excluded_pmids=excluded_pmids,
+            excluded_reasons=excluded_reasons,
         ),
     )
 
@@ -675,6 +907,8 @@ def disambiguate(
             "cluster_citation_rows": cluster_citation_rows,
             "errors": errors,
             "missing_affiliation_rows": missing_affiliation_rows,
+            "excluded_citation_rows": excluded_citation_rows,
+            "selected_excluded_pmids": [],
             "excluded_out_of_window": excluded_out_of_window,
             "excluded_by_type": excluded_by_type,
             "peer_reviewed_only": peer_reviewed_only_enabled,
@@ -688,11 +922,21 @@ def citation_select(
     request: Request,
     run_id: str = Form(...),
     selected_cluster_ids: list[str] = Form(default=[]),
+    selected_excluded_pmids: list[str] = Form(default=[]),
 ) -> HTMLResponse:
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
+    forced_excluded_pmids = set(selected_excluded_pmids)
     if not selected:
-        cluster_citation_rows = _build_cluster_citation_rows(citations=run.citations, matches=run.matches)
+        eligible_citations = [citation for citation in run.citations if citation.pmid not in run.excluded_pmids]
+        eligible_matches = [match for match in run.matches if match.pmid not in run.excluded_pmids]
+        cluster_citation_rows = _build_cluster_citation_rows(citations=eligible_citations, matches=eligible_matches)
+        excluded_citation_rows = _build_excluded_citation_rows(
+            citations=run.citations,
+            excluded_pmids=run.excluded_pmids,
+            excluded_reasons=run.excluded_reasons,
+            matches=run.matches,
+        )
         return templates.TemplateResponse(
             request,
             "disambiguate.html",
@@ -705,6 +949,8 @@ def citation_select(
                 "cluster_citation_rows": cluster_citation_rows,
                 "errors": ["Select at least one author identity cluster."],
                 "missing_affiliation_rows": [],
+                "excluded_citation_rows": excluded_citation_rows,
+                "selected_excluded_pmids": sorted(forced_excluded_pmids),
                 "excluded_out_of_window": 0,
                 "excluded_by_type": 0,
             },
@@ -712,10 +958,17 @@ def citation_select(
         )
 
     cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in run.clusters}
-    selected_matches = [match for match in run.matches if match.cluster_id in selected]
+    selected_matches = _filter_matches_for_analysis(
+        run=run,
+        selected_cluster_ids=selected,
+        selected_pmids=set(),
+        pmid_filter_enabled=0,
+        forced_excluded_pmids=forced_excluded_pmids,
+    )
     citation_selection_rows = _build_citation_selection_rows(
         citations=run.citations,
         matches=selected_matches,
+        all_matches=run.matches,
         cluster_label_by_id=cluster_label_by_id,
         start_year=run.start_year,
         end_year=run.end_year,
@@ -736,18 +989,22 @@ def citation_select(
             selected_cluster_ids=selected,
             start_year=run.start_year,
             end_year=run.end_year,
+            forced_include_pmids=forced_excluded_pmids,
+            excluded_pmids=run.excluded_pmids,
         )
         out_of_window_rows = _build_out_of_window_rows(
             citations=run.citations,
             matches=selected_matches,
             start_year=run.start_year,
             end_year=run.end_year,
+            forced_include_pmids=forced_excluded_pmids,
         )
         return _render_analysis_result(
             request,
             run_id=run_id,
             selected_cluster_ids=selected,
             selected_pmids=set(),
+            selected_excluded_pmids=forced_excluded_pmids,
             pmid_filter_enabled=0,
             analysis=analysis,
             start_year=run.start_year,
@@ -764,7 +1021,15 @@ def citation_select(
             "start_year": run.start_year,
             "end_year": run.end_year,
             "selected_cluster_ids": sorted(selected),
-            "citation_selection_rows": citation_selection_rows,
+            "selected_excluded_pmids": sorted(forced_excluded_pmids),
+            "citation_selection_rows": [row for row in citation_selection_rows if bool(row["needs_review"])],
+            "auto_included_pmids": sorted(
+                {
+                    str(row["pmid"])
+                    for row in citation_selection_rows
+                    if not bool(row["needs_review"])
+                }
+            ),
         },
     )
 
@@ -775,24 +1040,29 @@ def analyze(
     run_id: str = Form(...),
     selected_cluster_ids: list[str] = Form(default=[]),
     selected_pmids: list[str] = Form(default=[]),
+    selected_excluded_pmids: list[str] = Form(default=[]),
     pmid_filter_enabled: int = Form(default=0),
 ) -> HTMLResponse:
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
     selected_pmid_set = set(selected_pmids)
+    forced_excluded_pmids = set(selected_excluded_pmids)
     logger.info(
-        "Analyze request: run_id=%s, selected_clusters=%d, selected_pmids=%d, pmid_filter_enabled=%d",
+        "Analyze request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, pmid_filter_enabled=%d",
         run_id,
         len(selected),
         len(selected_pmid_set),
+        len(forced_excluded_pmids),
         pmid_filter_enabled,
     )
 
-    filtered_matches = [
-        match
-        for match in run.matches
-        if match.cluster_id in selected and (pmid_filter_enabled == 0 or match.pmid in selected_pmid_set)
-    ]
+    filtered_matches = _filter_matches_for_analysis(
+        run=run,
+        selected_cluster_ids=selected,
+        selected_pmids=selected_pmid_set,
+        pmid_filter_enabled=pmid_filter_enabled,
+        forced_excluded_pmids=forced_excluded_pmids,
+    )
 
     analysis = analyze_citations(
         citations=run.citations,
@@ -800,18 +1070,22 @@ def analyze(
         selected_cluster_ids=selected,
         start_year=run.start_year,
         end_year=run.end_year,
+        forced_include_pmids=forced_excluded_pmids,
+        excluded_pmids=run.excluded_pmids,
     )
     out_of_window_rows = _build_out_of_window_rows(
         citations=run.citations,
         matches=filtered_matches,
         start_year=run.start_year,
         end_year=run.end_year,
+        forced_include_pmids=forced_excluded_pmids,
     )
     return _render_analysis_result(
         request,
         run_id=run_id,
         selected_cluster_ids=selected,
         selected_pmids=selected_pmid_set,
+        selected_excluded_pmids=forced_excluded_pmids,
         pmid_filter_enabled=pmid_filter_enabled,
         analysis=analysis,
         start_year=run.start_year,
@@ -826,27 +1100,32 @@ def finalize(
     run_id: str = Form(...),
     selected_cluster_ids: list[str] = Form(default=[]),
     selected_pmids: list[str] = Form(default=[]),
+    selected_excluded_pmids: list[str] = Form(default=[]),
     pmid_filter_enabled: int = Form(default=0),
     accepted_row_indices: list[int] = Form(default=[]),
 ) -> HTMLResponse:
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
     selected_pmid_set = set(selected_pmids)
+    forced_excluded_pmids = set(selected_excluded_pmids)
     accepted = set(accepted_row_indices)
     logger.info(
-        "Finalize request: run_id=%s, selected_clusters=%d, selected_pmids=%d, pmid_filter_enabled=%d, accepted_uncertain=%d",
+        "Finalize request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, pmid_filter_enabled=%d, accepted_uncertain=%d",
         run_id,
         len(selected),
         len(selected_pmid_set),
+        len(forced_excluded_pmids),
         pmid_filter_enabled,
         len(accepted),
     )
 
-    filtered_matches = [
-        match
-        for match in run.matches
-        if match.cluster_id in selected and (pmid_filter_enabled == 0 or match.pmid in selected_pmid_set)
-    ]
+    filtered_matches = _filter_matches_for_analysis(
+        run=run,
+        selected_cluster_ids=selected,
+        selected_pmids=selected_pmid_set,
+        pmid_filter_enabled=pmid_filter_enabled,
+        forced_excluded_pmids=forced_excluded_pmids,
+    )
 
     analysis = analyze_citations(
         citations=run.citations,
@@ -854,6 +1133,8 @@ def finalize(
         selected_cluster_ids=selected,
         start_year=run.start_year,
         end_year=run.end_year,
+        forced_include_pmids=forced_excluded_pmids,
+        excluded_pmids=run.excluded_pmids,
     )
 
     for idx in analysis.uncertain_indices:
@@ -863,16 +1144,142 @@ def finalize(
         matches=filtered_matches,
         start_year=run.start_year,
         end_year=run.end_year,
+        forced_include_pmids=forced_excluded_pmids,
     )
     return _render_analysis_result(
         request,
         run_id=run_id,
         selected_cluster_ids=selected,
         selected_pmids=selected_pmid_set,
+        selected_excluded_pmids=forced_excluded_pmids,
         pmid_filter_enabled=pmid_filter_enabled,
         analysis=analysis,
         start_year=run.start_year,
         end_year=run.end_year,
         force_report=True,
         out_of_window_rows=out_of_window_rows,
+    )
+
+
+@app.post("/report-correct", response_class=HTMLResponse)
+def report_correct(
+    request: Request,
+    run_id: str = Form(...),
+    selected_cluster_ids: list[str] = Form(default=[]),
+    selected_pmids: list[str] = Form(default=[]),
+    selected_excluded_pmids: list[str] = Form(default=[]),
+    pmid_filter_enabled: int = Form(default=0),
+    accepted_uncertain_pmids: list[str] = Form(default=[]),
+    correction_entries: list[str] = Form(default=[]),
+) -> HTMLResponse:
+    run = _load_run(run_id)
+    selected = set(selected_cluster_ids)
+    selected_pmid_set = set(selected_pmids)
+    forced_excluded_pmids = set(selected_excluded_pmids)
+    accepted_uncertain_set = set(accepted_uncertain_pmids)
+    logger.info(
+        "Report-correct request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, corrections=%d",
+        run_id,
+        len(selected),
+        len(selected_pmid_set),
+        len(forced_excluded_pmids),
+        len(correction_entries),
+    )
+
+    analysis, filtered_matches = _rebuild_analysis_with_overrides(
+        run=run,
+        selected_cluster_ids=selected,
+        selected_pmids=selected_pmid_set,
+        selected_excluded_pmids=forced_excluded_pmids,
+        pmid_filter_enabled=pmid_filter_enabled,
+        accepted_uncertain_pmids=accepted_uncertain_set,
+        correction_entries=correction_entries,
+    )
+
+    out_of_window_rows = _build_out_of_window_rows(
+        citations=run.citations,
+        matches=filtered_matches,
+        start_year=run.start_year,
+        end_year=run.end_year,
+        forced_include_pmids=forced_excluded_pmids,
+    )
+    return _render_analysis_result(
+        request,
+        run_id=run_id,
+        selected_cluster_ids=selected,
+        selected_pmids=selected_pmid_set,
+        selected_excluded_pmids=forced_excluded_pmids,
+        pmid_filter_enabled=pmid_filter_enabled,
+        analysis=analysis,
+        start_year=run.start_year,
+        end_year=run.end_year,
+        force_report=True,
+        out_of_window_rows=out_of_window_rows,
+    )
+
+
+@app.post("/report-export.csv")
+def report_export_csv(
+    run_id: str = Form(...),
+    selected_cluster_ids: list[str] = Form(default=[]),
+    selected_pmids: list[str] = Form(default=[]),
+    selected_excluded_pmids: list[str] = Form(default=[]),
+    pmid_filter_enabled: int = Form(default=0),
+    accepted_uncertain_pmids: list[str] = Form(default=[]),
+    correction_entries: list[str] = Form(default=[]),
+) -> Response:
+    run = _load_run(run_id)
+    selected = set(selected_cluster_ids)
+    selected_pmid_set = set(selected_pmids)
+    forced_excluded_pmids = set(selected_excluded_pmids)
+    accepted_uncertain_set = set(accepted_uncertain_pmids)
+    logger.info(
+        "Report-export request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, corrections=%d",
+        run_id,
+        len(selected),
+        len(selected_pmid_set),
+        len(forced_excluded_pmids),
+        len(correction_entries),
+    )
+
+    analysis, _ = _rebuild_analysis_with_overrides(
+        run=run,
+        selected_cluster_ids=selected,
+        selected_pmids=selected_pmid_set,
+        selected_excluded_pmids=forced_excluded_pmids,
+        pmid_filter_enabled=pmid_filter_enabled,
+        accepted_uncertain_pmids=accepted_uncertain_set,
+        correction_entries=correction_entries,
+    )
+
+    row_data = _with_row_render_fields(analysis)
+    excluded_rows = [row for row in row_data if not row["include"]]
+    included_pubmed_rows = [row for row in row_data if row["include"] and row["role_source"] != "pmc"]
+    included_pmc_rows = [row for row in row_data if row["include"] and row["role_source"] == "pmc"]
+    report_rows = excluded_rows + included_pubmed_rows + included_pmc_rows
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["PMID/PMCID", "Title", "Journal", "Date", "Authors", "Publication Type", "Counted as"])
+    for row in report_rows:
+        pmid_pmcid = f"PMID {row['pmid']}"
+        if row["pmcid"]:
+            pmid_pmcid = f"{pmid_pmcid} | {row['pmcid']}"
+        writer.writerow(
+            [
+                pmid_pmcid,
+                row["title"],
+                row["journal"],
+                row["print_date"],
+                row["authors"],
+                row["publication_types"],
+                row["counted_as_report"],
+            ]
+        )
+
+    filename = f"pmcparser_{run.start_year}_{run.end_year}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

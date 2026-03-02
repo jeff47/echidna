@@ -16,6 +16,7 @@
     .subtable { margin-top: 0.55rem; }
     .subtable th, .subtable td { font-size: 0.88rem; padding: 0.35rem; }
     .warn { background: #fff4f2; }
+    .excluded { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .error { color: #b42318; }
@@ -73,6 +74,37 @@
             {% endif %}
           </div>
         {% endfor %}
+        {% if excluded_citation_rows %}
+          <h2>Excluded Citations (Optional Override)</h2>
+          <p class="muted">These matched citations were excluded before disambiguation (year/type filters). Check any citation below to force include it in downstream analysis.</p>
+          <table class="subtable">
+            <thead>
+              <tr>
+                <th>Force Include</th>
+                <th>Year</th>
+                <th>Journal</th>
+                <th>Title</th>
+                <th>PMID / PMCID</th>
+                <th>Exclusion Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in excluded_citation_rows %}
+                <tr class="excluded">
+                  <td><input type="checkbox" name="selected_excluded_pmids" value="{{ row.pmid }}" {% if row.pmid in selected_excluded_pmids %}checked{% endif %}></td>
+                  <td>{{ row.year if row.year else 'n/a' }}</td>
+                  <td>{{ row.journal }}</td>
+                  <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a></td>
+                  <td>
+                    <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
+                    {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+                  </td>
+                  <td>{{ row.reason }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
         <button type="submit">Continue</button>
       </form>
 

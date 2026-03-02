@@ -65,3 +65,4 @@ class ReportRow:
     is_review: bool = False
     uncertainty_reasons: list[str] = field(default_factory=list)
     include: bool = True
+    forced_include: bool = False

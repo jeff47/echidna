@@ -20,15 +20,27 @@ XML_NS_ID = "{http://www.w3.org/XML/1998/namespace}id"
 EQUAL_PATTERNS = (
     "contributed equally",
     "equal contribution",
+    "equal contributions",
     "equally contributed",
+    "contributed in equal measure",
     "co-first",
     "co first",
 )
 SENIOR_PATTERNS = (
     "co-senior",
     "co senior",
+    "co-senior authorship",
+    "co senior authorship",
+    "co-last",
+    "co last",
+    "co-last authorship",
+    "co last authorship",
+    "share senior authorship",
+    "shared senior authorship",
     "jointly supervised",
     "joint supervision",
+    "jointly led",
+    "jointly directed",
     "senior author",
     "supervised the work",
 )
@@ -46,6 +58,24 @@ AFFILIATION_HINT_PATTERNS = (
     "nih",
     "national institutes of health",
 )
+AFFILIATION_FOOTNOTE_TARGET_WORDS = (
+    "department",
+    "departments",
+    "division",
+    "institute",
+    "university",
+    "school",
+    "college",
+    "hospital",
+    "laboratory",
+    "lab",
+    "center",
+    "centre",
+    "faculty",
+    "program",
+    "unit",
+)
+SUPERSCRIPT_TRANSLATION = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉", "01234567890123456789")
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +240,7 @@ class NcbiClient:
             if not pmid:
                 continue
 
-            title = _find_text(article, ".//Article/ArticleTitle")
+            title = _find_itertext(article, ".//Article/ArticleTitle")
             title = html.unescape(re.sub(r"\s+", " ", title)).strip()
 
             journal = _find_text(article, ".//Article/Journal/ISOAbbreviation") or _find_text(
@@ -251,39 +281,29 @@ class NcbiClient:
         aff_by_id, aff_by_label = _extract_pmc_affiliation_maps(aff_context)
         note_by_id = _extract_pmc_note_text_by_id(root)
 
-        fn_text: dict[str, str] = {}
-        for fn in root.findall(".//front/article-meta/author-notes/fn") + root.findall(".//fn-group/fn"):
-            fn_id = fn.attrib.get("id")
-            if not fn_id:
-                continue
-            text = " ".join("".join(fn.itertext()).split()).lower()
-            fn_text[fn_id] = text
+        fn_text = _extract_pmc_contrib_note_text(root)
 
-        first_fn_ids: set[str] = set()
-        senior_fn_ids: set[str] = set()
+        explicit_senior_ids: set[str] = set()
+        equal_note_ids: set[str] = set()
+        note_ids = set(fn_text.keys())
+        for note_id, text in fn_text.items():
+            if _contains_any_phrase(text, SENIOR_PATTERNS):
+                explicit_senior_ids.add(note_id)
+            elif _contains_any_phrase(text, EQUAL_PATTERNS):
+                equal_note_ids.add(note_id)
 
-        for fn_id, text in fn_text.items():
-            has_senior_pattern = any(p in text for p in SENIOR_PATTERNS)
-            has_equal_pattern = any(p in text for p in EQUAL_PATTERNS)
-            if has_senior_pattern:
-                senior_fn_ids.add(fn_id)
-            elif has_equal_pattern:
-                first_fn_ids.add(fn_id)
-
-        co_first_positions: set[int] = set()
-        co_senior_positions: set[int] = set()
+        note_positions: dict[str, set[int]] = {}
         authors: list[Author] = []
 
         for idx, contrib in enumerate(contribs, start=1):
-            ref_ids = {
-                x.attrib.get("rid", "")
-                for x in contrib.findall(".//xref")
-                if x.attrib.get("rid")
-            }
-            if first_fn_ids & ref_ids:
-                co_first_positions.add(idx)
-            if senior_fn_ids & ref_ids:
-                co_senior_positions.add(idx)
+            ref_ids: set[str] = set()
+            for xref in contrib.findall(".//xref"):
+                ref_type = (xref.attrib.get("ref-type") or "").strip().lower()
+                for rid in _split_reference_ids(xref.attrib.get("rid", "")):
+                    if ref_type in {"fn", "corresp"} or rid in note_ids:
+                        ref_ids.add(rid)
+            for rid in ref_ids:
+                note_positions.setdefault(rid, set()).add(idx)
 
             last_name = _find_text(contrib, ".//name/surname") or _find_text(contrib, ".//surname")
             fore_name = _find_text(contrib, ".//name/given-names") or _find_text(contrib, ".//given-names")
@@ -305,6 +325,28 @@ class NcbiClient:
                     affiliation=affiliation,
                 )
             )
+
+        author_count = len(contribs)
+        co_first_positions: set[int] = set()
+        co_senior_positions: set[int] = set()
+        for note_id in explicit_senior_ids:
+            co_senior_positions.update(note_positions.get(note_id, set()))
+
+        for note_id in equal_note_ids:
+            positions = sorted(note_positions.get(note_id, set()))
+            if not positions:
+                continue
+            is_prefix = _is_prefix_positions(positions)
+            is_suffix = _is_suffix_positions(positions, author_count)
+            # Precision-first: if note marks all authors (both prefix and suffix),
+            # skip inference rather than forcing first/senior.
+            if is_prefix and is_suffix:
+                continue
+            if is_prefix:
+                co_first_positions.update(positions)
+                continue
+            if is_suffix:
+                co_senior_positions.update(positions)
 
         return co_first_positions, co_senior_positions, authors, len(contribs)
 
@@ -335,6 +377,13 @@ def _find_text(node: ET.Element, path: str) -> str:
     if target is None or target.text is None:
         return ""
     return target.text
+
+
+def _find_itertext(node: ET.Element, path: str) -> str:
+    target = node.find(path)
+    if target is None:
+        return ""
+    return "".join(target.itertext())
 
 
 def _find_pub_date(article: ET.Element) -> str:
@@ -458,6 +507,37 @@ def _extract_pmc_note_text_by_id(root: ET.Element) -> dict[str, str]:
     return by_id
 
 
+def _extract_pmc_contrib_note_text(root: ET.Element) -> dict[str, str]:
+    by_id: dict[str, str] = {}
+    paths = (
+        ".//front/article-meta/author-notes/fn",
+        ".//fn-group/fn",
+        ".//front/article-meta/author-notes/corresp",
+        ".//corresp-group/corresp",
+    )
+    for path in paths:
+        for node in root.findall(path):
+            node_id = (node.attrib.get("id") or node.attrib.get(XML_NS_ID) or "").strip()
+            if not node_id:
+                continue
+            text = " ".join("".join(node.itertext()).split()).lower()
+            if text:
+                by_id[node_id] = text
+    return by_id
+
+
+def _is_prefix_positions(positions: list[int]) -> bool:
+    if not positions:
+        return False
+    return positions == list(range(1, positions[-1] + 1))
+
+
+def _is_suffix_positions(positions: list[int], author_count: int) -> bool:
+    if not positions or author_count <= 0:
+        return False
+    return positions == list(range(positions[0], author_count + 1))
+
+
 def _extract_contrib_affiliation(
     contrib: ET.Element,
     *,
@@ -530,12 +610,15 @@ def _clean_text(value: str) -> str:
 
 def _normalize_affiliation_text(value: str) -> str:
     cleaned = _clean_text(value)
+    cleaned = cleaned.translate(SUPERSCRIPT_TRANSLATION)
     cleaned = _strip_affiliation_identifiers(cleaned)
+    cleaned = _strip_leading_numeric_marker_clusters(cleaned)
     cleaned = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", cleaned)
     cleaned = _strip_segment_prefix_markers(cleaned)
     # Common legacy formatting artifacts: "1Department", "and2 Department".
     cleaned = re.sub(r"\band(?=\d)", "and ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"(?<![A-Za-z0-9])(\d+)(?=[A-Za-z])", r"\1 ", cleaned)
+    cleaned = _strip_numeric_footnote_markers(cleaned)
     # Remove numeric affiliation markers that are typically superscript references.
     cleaned = re.sub(r"(^|[;,\(\[]\s*|\band\s+)\d+\s+(?=[A-Za-z])", r"\1", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\b(\d+)\s+(st|nd|rd|th)\b", r"\1\2", cleaned, flags=re.IGNORECASE)
@@ -566,11 +649,22 @@ def _normalize_label(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "", value).lower()
 
 
+def _normalize_phrase(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _contains_any_phrase(text: str, patterns: tuple[str, ...]) -> bool:
+    normalized = _normalize_phrase(text)
+    if not normalized:
+        return False
+    return any(_normalize_phrase(pattern) in normalized for pattern in patterns)
+
+
 def _looks_like_affiliation_text(value: str) -> bool:
     lowered = value.lower()
-    if any(pattern in lowered for pattern in EQUAL_PATTERNS):
+    if _contains_any_phrase(lowered, EQUAL_PATTERNS):
         return False
-    if any(pattern in lowered for pattern in SENIOR_PATTERNS):
+    if _contains_any_phrase(lowered, SENIOR_PATTERNS):
         return False
     return any(pattern in lowered for pattern in AFFILIATION_HINT_PATTERNS)
 
@@ -605,6 +699,37 @@ def _strip_segment_prefix_markers(value: str) -> str:
     # Remove single-letter segment markers (e.g. aHospital, XWeill) only at segment starts.
     # Restrict to lowercase letters and uppercase X marker to avoid stripping real acronyms (e.g. HSS).
     return re.sub(r"(^|[;,.])\s*(?:[a-z]|X)\s*(?=[A-Z])", r"\1 ", value)
+
+
+def _strip_leading_numeric_marker_clusters(value: str) -> str:
+    # Drop footnote-like leading numeric marker clusters at the start of the
+    # affiliation or after semicolon-separated segments, e.g.:
+    # "1 .38142. Transplantation Research Center, ..."
+    # "[2] Department of Medicine, ..."
+    cleaned = re.sub(
+        r"(^|;)\s*(?:\[\s*\d+\s*\]\s*|(?:\d+\s*[.)\]:-]?\s*)+)(?=[A-Za-z])",
+        r"\1 ",
+        value,
+    )
+    return cleaned
+
+
+def _strip_numeric_footnote_markers(value: str) -> str:
+    target_words = "|".join(AFFILIATION_FOOTNOTE_TARGET_WORDS)
+    cleaned = value
+    pattern = re.compile(
+        rf"(^|[;,\(\[]\s*|\band\s+)"
+        rf"(?:\d+\s*[,/&]\s*)*\d+\s*(?:[.)\]:-]\s*)?"
+        rf"(?=(?:{target_words})\b)",
+        flags=re.IGNORECASE,
+    )
+    # A short fixed-point loop handles stacked markers like "1,2 Department".
+    for _ in range(3):
+        updated = pattern.sub(r"\1", cleaned)
+        if updated == cleaned:
+            break
+        cleaned = updated
+    return cleaned
 
 
 def _strip_embedded_numbered_affiliation_tail(value: str) -> str:

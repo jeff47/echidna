@@ -168,3 +168,37 @@ def test_normalize_affiliation_text_strips_grid_artifacts_from_donlin_examples()
     assert "grid" not in normalized.lower()
     assert normalized.startswith("Hospital for Special Surgery")
     assert "; Weill Cornell Medicine" in normalized
+
+
+def test_normalize_affiliation_text_strips_superscript_marker_prefix() -> None:
+    raw = "¹Department of Medicine, Example University, Boston, MA"
+    normalized = _normalize_affiliation_text(raw)
+    assert normalized.startswith("Department of Medicine")
+    assert not normalized.startswith("1")
+
+
+def test_normalize_affiliation_text_strips_punctuated_numeric_marker_prefix() -> None:
+    raw = "1 . Department of Medicine, Example University, Boston, MA"
+    normalized = _normalize_affiliation_text(raw)
+    assert normalized.startswith("Department of Medicine")
+    assert "1 ." not in normalized
+
+
+def test_normalize_affiliation_text_preserves_address_numbers() -> None:
+    raw = "Hospital for Special Surgery, E 70th Street, New York, NY 10021"
+    normalized = _normalize_affiliation_text(raw)
+    assert "70th Street" in normalized
+
+
+def test_normalize_affiliation_text_strips_leading_numeric_marker_clusters() -> None:
+    raw = "1 .38142. Transplantation Research Center, Renal Division, Brigham and Women's Hospital"
+    normalized = _normalize_affiliation_text(raw)
+    assert normalized.startswith("Transplantation Research Center")
+    assert "1 .38142." not in normalized
+
+
+def test_normalize_affiliation_text_strips_bracketed_numeric_markers() -> None:
+    raw = "[2] Department of Medicine, Example University, Boston, MA"
+    normalized = _normalize_affiliation_text(raw)
+    assert normalized.startswith("Department of Medicine")
+    assert "[2]" not in normalized

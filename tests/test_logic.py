@@ -226,6 +226,66 @@ def test_uncertain_when_multiple_name_matches_or_pubmed_only() -> None:
     assert "PMC missing" in " ".join(result.rows[0].uncertainty_reasons)
 
 
+def test_analyze_citations_forced_include_overrides_exclusion_and_window() -> None:
+    target = parse_target_name("Jane Doe")
+    citation = _citation(
+        "2099",
+        2020,
+        [
+            _author(1, "Doe", "Jane", "J", "Example Hospital"),
+            _author(2, "Lee", "Ann", "A", "Example Hospital"),
+        ],
+        source="pmc",
+    )
+    clusters, matches = build_clusters([citation], target)
+    result = analyze_citations(
+        citations=[citation],
+        matches=matches,
+        selected_cluster_ids={clusters[0].cluster_id},
+        start_year=2021,
+        end_year=2026,
+        forced_include_pmids={"2099"},
+        excluded_pmids={"2099"},
+    )
+
+    assert len(result.rows) == 1
+    assert result.rows[0].citation.pmid == "2099"
+    assert result.rows[0].forced_include is True
+
+
+def test_uncertain_indices_follow_sorted_row_order() -> None:
+    target = parse_target_name("Jane Doe")
+    uncertain = _citation(
+        "21",
+        2022,
+        [
+            _author(1, "Doe", "Jane", "J", "Example Hospital"),
+            _author(2, "Lee", "Ann", "A", "Example Hospital"),
+        ],
+        source="pubmed",
+    )
+    certain = _citation(
+        "22",
+        2025,
+        [
+            _author(1, "Doe", "Jane", "J", "Example Hospital"),
+            _author(2, "Lee", "Ann", "A", "Example Hospital"),
+        ],
+        source="pmc",
+    )
+    clusters, matches = build_clusters([uncertain, certain], target)
+    result = analyze_citations(
+        citations=[uncertain, certain],
+        matches=matches,
+        selected_cluster_ids={clusters[0].cluster_id},
+        start_year=2021,
+        end_year=2026,
+    )
+
+    assert [row.citation.pmid for row in result.rows] == ["22", "21"]
+    assert result.uncertain_indices == [1]
+
+
 def test_format_summary_counts_only_included_rows() -> None:
     target = parse_target_name("Jane Doe")
     citation1 = _citation(
@@ -290,3 +350,48 @@ def test_review_senior_is_separate_from_overall_total() -> None:
     summary = format_summary(result.rows, 2021, 2026)
     assert "0 total" in summary
     assert "1 review(s) as Sr author" in summary
+
+
+def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:
+    rows = [
+        # Included first/senior rows
+        _row_summary("Nat Immunol", 2025, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("Nat Immunol", 2026, counted_overall=True, counted_first=False, counted_senior=True),
+        _row_summary("JCI Insight", 2022, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("JCI Insight", 2025, counted_overall=True, counted_first=False, counted_senior=True),
+        # Included but not first/senior
+        _row_summary("Cell", 2024, counted_overall=True, counted_first=False, counted_senior=False),
+    ]
+    summary = format_summary(rows, 2021, 2026)
+    assert "5 total, 4 1st/Sr author" in summary
+    assert "2 JCI Insight 2022, 2025" in summary
+    assert "2 Nat Immunol 2025, 2026" in summary
+
+
+def _row_summary(
+    journal: str,
+    year: int,
+    *,
+    counted_overall: bool,
+    counted_first: bool,
+    counted_senior: bool,
+):
+    from app.models import Citation, ReportRow
+
+    citation = Citation(
+        pmid=f"{journal}-{year}",
+        pmcid=None,
+        title=f"{journal} {year}",
+        journal=journal,
+        print_year=year,
+        print_date=str(year),
+        authors=[],
+        source_for_roles="pubmed",
+    )
+    return ReportRow(
+        citation=citation,
+        counted_overall=counted_overall,
+        counted_first=counted_first,
+        counted_senior=counted_senior,
+        include=True,
+    )

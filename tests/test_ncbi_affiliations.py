@@ -46,6 +46,180 @@ def test_extract_pmc_enrichment_includes_roles_and_affiliations() -> None:
     assert authors[0].fore_name == "Jeffrey"
 
 
+def test_extract_pmc_enrichment_detects_co_senior_from_corresp_note() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>Sokhi</surname><given-names>UK</given-names></name>
+              <xref ref-type="fn" rid="eq1" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>Donlin</surname><given-names>Laura</given-names></name>
+              <xref ref-type="corresp" rid="corr1" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>Ivashkiv</surname><given-names>Lionel</given-names></name>
+              <xref ref-type="corresp" rid="corr1" />
+            </contrib>
+          </contrib-group>
+          <author-notes>
+            <fn id="eq1">These authors contributed equally.</fn>
+            <corresp id="corr1">These authors share senior authorship.</corresp>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    co_first, co_senior, _, _ = client._extract_pmc_enrichment(xml)
+
+    assert co_first == {1}
+    assert co_senior == {2, 3}
+
+
+def test_extract_pmc_enrichment_interprets_equal_prefix_as_co_first() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>A</surname><given-names>A1</given-names></name>
+              <xref ref-type="fn" rid="eq1" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>B</surname><given-names>B1</given-names></name>
+              <xref ref-type="fn" rid="eq1" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>C</surname><given-names>C1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>D</surname><given-names>D1</given-names></name>
+            </contrib>
+          </contrib-group>
+          <author-notes>
+            <fn id="eq1">These authors contributed equally.</fn>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    co_first, co_senior, _, _ = client._extract_pmc_enrichment(xml)
+
+    assert co_first == {1, 2}
+    assert co_senior == set()
+
+
+def test_extract_pmc_enrichment_interprets_equal_suffix_as_co_senior() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>A</surname><given-names>A1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>B</surname><given-names>B1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>C</surname><given-names>C1</given-names></name>
+              <xref ref-type="fn" rid="eq1" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>D</surname><given-names>D1</given-names></name>
+              <xref ref-type="fn" rid="eq1" />
+            </contrib>
+          </contrib-group>
+          <author-notes>
+            <fn id="eq1">These authors contributed equally.</fn>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    co_first, co_senior, _, _ = client._extract_pmc_enrichment(xml)
+
+    assert co_first == set()
+    assert co_senior == {3, 4}
+
+
+def test_extract_pmc_enrichment_detects_equal_contributions_phrase() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>A</surname><given-names>A1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>B</surname><given-names>B1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>C</surname><given-names>C1</given-names></name>
+              <xref ref-type="fn" rid="eq2" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>D</surname><given-names>D1</given-names></name>
+              <xref ref-type="fn" rid="eq2" />
+            </contrib>
+          </contrib-group>
+          <author-notes>
+            <fn id="eq2">The authors made equal contributions.</fn>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    co_first, co_senior, _, _ = client._extract_pmc_enrichment(xml)
+
+    assert co_first == set()
+    assert co_senior == {3, 4}
+
+
+def test_extract_pmc_enrichment_uses_note_rid_even_with_nonstandard_ref_type() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>A</surname><given-names>A1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>B</surname><given-names>B1</given-names></name>
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>C</surname><given-names>C1</given-names></name>
+              <xref ref-type="author-notes" rid="eq3" />
+            </contrib>
+            <contrib contrib-type="author">
+              <name><surname>D</surname><given-names>D1</given-names></name>
+              <xref ref-type="author-notes" rid="eq3" />
+            </contrib>
+          </contrib-group>
+          <author-notes>
+            <fn id="eq3">These authors contributed equally.</fn>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    co_first, co_senior, _, _ = client._extract_pmc_enrichment(xml)
+
+    assert co_first == set()
+    assert co_senior == {3, 4}
+
+
 def test_fill_missing_affiliations_from_pmc_values() -> None:
     client = NcbiClient()
     citation = Citation(

@@ -301,7 +301,13 @@ def analyze_citations(
     selected_cluster_ids: set[str],
     start_year: int,
     end_year: int,
+    forced_include_pmids: set[str] | None = None,
+    excluded_pmids: set[str] | None = None,
 ) -> AnalysisResult:
+    if forced_include_pmids is None:
+        forced_include_pmids = set()
+    if excluded_pmids is None:
+        excluded_pmids = set()
     by_pmid: dict[str, list[AuthorMatch]] = defaultdict(list)
     for match in matches:
         by_pmid[match.pmid].append(match)
@@ -310,13 +316,19 @@ def analyze_citations(
     uncertain_indices: list[int] = []
 
     for citation in citations:
-        if not citation_in_window(citation, start_year, end_year):
+        force_included = citation.pmid in forced_include_pmids
+        if citation.pmid in excluded_pmids and not force_included:
+            continue
+        if not citation_in_window(citation, start_year, end_year) and not force_included:
             continue
 
         matched_mentions = by_pmid.get(citation.pmid, [])
         selected_mentions = [m for m in matched_mentions if m.cluster_id in selected_cluster_ids]
-        if not selected_mentions:
+        if not selected_mentions and not force_included:
             continue
+        # Forced-excluded citations can be explicitly restored at step 1.
+        if force_included:
+            selected_mentions = matched_mentions
 
         reasons: list[str] = []
 
@@ -348,6 +360,7 @@ def analyze_citations(
             is_review=review_article,
             uncertainty_reasons=reasons,
             include=not reasons,
+            forced_include=force_included,
         )
         rows.append(row)
         if reasons:
@@ -360,6 +373,8 @@ def analyze_citations(
             r.citation.journal.lower(),
         )
     )
+    # Recompute after sorting so review indices map to the rendered row order.
+    uncertain_indices = [idx for idx, row in enumerate(rows) if row.uncertainty_reasons]
 
     return AnalysisResult(rows=rows, uncertain_indices=uncertain_indices)
 
@@ -374,8 +389,34 @@ def format_summary(
     total = len(overall_included)
     first_senior = [r for r in overall_included if r.counted_first or r.counted_senior]
     review_senior_total = sum(1 for r in included if r.counted_review_senior)
+    detail = _first_senior_detail(first_senior)
     return (
         f"Peer-reviewed Publications ({start_year}-{end_year}): {total} total, "
-        f"{len(first_senior)} 1st/Sr author. "
+        f"{len(first_senior)} 1st/Sr author ({detail}). "
         f"In addition: {review_senior_total} review(s) as Sr author"
     )
+
+
+def _first_senior_detail(rows: list[ReportRow]) -> str:
+    if not rows:
+        return "none"
+
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for row in rows:
+        year = row.citation.print_year
+        if year is not None:
+            grouped[row.citation.journal].append(year)
+        else:
+            grouped[row.citation.journal].append(-1)
+
+    parts: list[str] = []
+    # Sort by descending count then journal name for deterministic output.
+    for journal, years in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0].lower())):
+        count = len(years)
+        valid_years = sorted({year for year in years if year >= 0})
+        if valid_years:
+            year_text = ", ".join(str(year) for year in valid_years)
+            parts.append(f"{count} {journal} {year_text}")
+        else:
+            parts.append(f"{count} {journal}")
+    return "; ".join(parts)

@@ -16,6 +16,7 @@
     .outwindow { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
+    .toolbar { margin-top: 0.75rem; display: flex; gap: 1rem; align-items: center; }
   </style>
 </head>
 <body>
@@ -23,7 +24,10 @@
   <div class="card">
     <h1>Step 2: Citation Selection</h1>
     <p>Author: <strong>{{ author_name }}</strong> | Window: {{ start_year }}-{{ end_year }}</p>
-    <p class="muted">Ambiguous citations are highlighted. Include or exclude citations before final counting.</p>
+    <p class="muted">Only citations requiring manual review are shown below.</p>
+    {% if auto_included_pmids %}
+      <p class="muted">{{ auto_included_pmids|length }} citation(s) were auto-included and are not shown.</p>
+    {% endif %}
 
     <form method="post" action="/analyze">
       <input type="hidden" name="run_id" value="{{ run_id }}">
@@ -31,6 +35,19 @@
       {% for cluster_id in selected_cluster_ids %}
         <input type="hidden" name="selected_cluster_ids" value="{{ cluster_id }}">
       {% endfor %}
+      {% for pmid in selected_excluded_pmids %}
+        <input type="hidden" name="selected_excluded_pmids" value="{{ pmid }}">
+      {% endfor %}
+      {% for pmid in auto_included_pmids %}
+        <input type="hidden" name="selected_pmids" value="{{ pmid }}">
+      {% endfor %}
+
+      <div class="toolbar">
+        <label>
+          <input type="checkbox" id="include-all-toggle" checked>
+          Include all visible citations
+        </label>
+      </div>
 
       <table>
         <thead>
@@ -74,5 +91,25 @@
     </form>
   </div>
 </main>
+<script>
+  const includeAllToggle = document.getElementById("include-all-toggle");
+  const rowCheckboxes = Array.from(document.querySelectorAll('input[name="selected_pmids"]')).filter(
+    (input) => input.type === "checkbox",
+  );
+
+  if (includeAllToggle) {
+    includeAllToggle.addEventListener("change", () => {
+      for (const checkbox of rowCheckboxes) {
+        checkbox.checked = includeAllToggle.checked;
+      }
+    });
+
+    for (const checkbox of rowCheckboxes) {
+      checkbox.addEventListener("change", () => {
+        includeAllToggle.checked = rowCheckboxes.every((item) => item.checked);
+      });
+    }
+  }
+</script>
 </body>
 </html>

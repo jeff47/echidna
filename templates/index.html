@@ -19,6 +19,8 @@
     h1 { margin-top: 0; }
     label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
     input, textarea { width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; }
+    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
+    .checkbox-row input[type="checkbox"] { width: auto; padding: 0; margin: 0; border: none; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     button { margin-top: 1rem; background: var(--accent); color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .error { color: #b42318; margin-top: 0.5rem; }
@@ -52,7 +54,7 @@
       <label for="pmid_file">PMID File (optional)</label>
       <input id="pmid_file" name="pmid_file" type="file" accept=".txt,text/plain">
 
-      <label>
+      <label class="checkbox-row">
         <input type="checkbox" name="peer_reviewed_only" value="1" {% if peer_reviewed_only %}checked{% endif %}>
         Peer-reviewed only (exclude preprints, editorials, comments, letters, news, etc.)
       </label>

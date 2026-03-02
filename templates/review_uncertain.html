@@ -30,11 +30,14 @@
       {% for pmid in selected_pmids %}
         <input type="hidden" name="selected_pmids" value="{{ pmid }}">
       {% endfor %}
+      {% for pmid in selected_excluded_pmids %}
+        <input type="hidden" name="selected_excluded_pmids" value="{{ pmid }}">
+      {% endfor %}
 
       <table>
         <thead>
           <tr>
-            <th>Include</th>
+            <th><input type="checkbox" id="include-all-uncertain" checked aria-label="Include all uncertain citations"></th>
             <th>PMID / PMCID</th>
             <th>Title</th>
             <th>Journal</th>
@@ -48,7 +51,7 @@
         <tbody>
           {% for row in rows %}
             <tr>
-              <td><input type="checkbox" name="accepted_row_indices" value="{{ row.idx }}"></td>
+              <td><input type="checkbox" name="accepted_row_indices" value="{{ row.idx }}" checked></td>
               <td>
                 <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
@@ -69,5 +72,22 @@
     </form>
   </div>
 </main>
+<script>
+  const includeAllUncertain = document.getElementById("include-all-uncertain");
+  const uncertainCheckboxes = Array.from(document.querySelectorAll('input[name="accepted_row_indices"]'));
+  if (includeAllUncertain) {
+    includeAllUncertain.addEventListener("change", () => {
+      for (const checkbox of uncertainCheckboxes) {
+        checkbox.checked = includeAllUncertain.checked;
+      }
+    });
+    for (const checkbox of uncertainCheckboxes) {
+      checkbox.checked = true;
+      checkbox.addEventListener("change", () => {
+        includeAllUncertain.checked = uncertainCheckboxes.every((item) => item.checked);
+      });
+    }
+  }
+</script>
 </body>
 </html>

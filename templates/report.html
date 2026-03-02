@@ -13,6 +13,8 @@
     th { background: #f0f4f8; }
     a { color: #0f766e; text-decoration: none; }
     .excluded { background: #fff4f2; }
+    button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
+    select { font-size: 0.9rem; }
   </style>
 </head>
 <body>
@@ -49,41 +51,70 @@
       </table>
     {% endif %}
 
-    <table>
-      <thead>
-        <tr>
-          <th>PMID / PMCID</th>
-          <th>Title</th>
-          <th>Journal</th>
-          <th>Date</th>
-          <th>Publication Type(s)</th>
-          <th>Authors</th>
-          <th>Counted As</th>
-          <th>Source</th>
-          <th>Status</th>
-          <th>Notes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr class="{% if not row.include %}excluded{% endif %}">
-            <td>
-              <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
-              {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
-            </td>
-            <td>{{ row.title }}</td>
-            <td>{{ row.journal }}</td>
-            <td>{{ row.print_date }}</td>
-            <td>{{ row.publication_types }}</td>
-            <td>{{ row.authors }}</td>
-            <td>{{ row.counted_as }}</td>
-            <td>{{ row.role_source }}</td>
-            <td>{{ row.status_label }}</td>
-            <td>{{ row.notes }}</td>
+    <form method="post" action="/report-correct">
+      <input type="hidden" name="run_id" value="{{ run_id }}">
+      <input type="hidden" name="pmid_filter_enabled" value="{{ pmid_filter_enabled }}">
+      {% for cluster_id in selected_cluster_ids %}
+        <input type="hidden" name="selected_cluster_ids" value="{{ cluster_id }}">
+      {% endfor %}
+      {% for pmid in selected_pmids %}
+        <input type="hidden" name="selected_pmids" value="{{ pmid }}">
+      {% endfor %}
+      {% for pmid in selected_excluded_pmids %}
+        <input type="hidden" name="selected_excluded_pmids" value="{{ pmid }}">
+      {% endfor %}
+      {% for pmid in accepted_uncertain_pmids %}
+        <input type="hidden" name="accepted_uncertain_pmids" value="{{ pmid }}">
+      {% endfor %}
+
+      <table>
+        <thead>
+          <tr>
+            <th>PMID / PMCID</th>
+            <th>Title</th>
+            <th>Journal</th>
+            <th>Date</th>
+            <th>Publication Type(s)</th>
+            <th>Authors</th>
+            <th>Counted As</th>
+            <th>Correction</th>
+            <th>Source</th>
+            <th>Status</th>
+            <th>Notes</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="{% if not row.include %}excluded{% endif %}">
+              <td>
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
+                {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+              </td>
+              <td>{{ row.title }}</td>
+              <td>{{ row.journal }}</td>
+              <td>{{ row.print_date }}</td>
+              <td>{{ row.publication_types }}</td>
+              <td>{{ row.authors }}</td>
+              <td>{{ row.counted_as_report }}</td>
+              <td>
+                <select name="correction_entries">
+                  <option value="{{ row.pmid }}::exclude" {% if row.correction_default == 'exclude' %}selected{% endif %}>exclude</option>
+                  <option value="{{ row.pmid }}::overall" {% if row.correction_default == 'overall' %}selected{% endif %}>overall</option>
+                  <option value="{{ row.pmid }}::senior" {% if row.correction_default == 'senior' %}selected{% endif %}>senior</option>
+                  <option value="{{ row.pmid }}::review" {% if row.correction_default == 'review' %}selected{% endif %}>review</option>
+                  <option value="{{ row.pmid }}::review_senior" {% if row.correction_default == 'review_senior' %}selected{% endif %}>review as senior</option>
+                </select>
+              </td>
+              <td>{{ row.role_source }}</td>
+              <td>{{ row.status_label }}</td>
+              <td>{{ row.notes }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Apply Corrections And Recalculate Summary</button>
+      <button type="submit" formaction="/report-export.csv" formmethod="post">Download CSV</button>
+    </form>
   </div>
 </main>
 </body>

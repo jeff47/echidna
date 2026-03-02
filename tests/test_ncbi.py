@@ -1,6 +1,6 @@
 import httpx
 
-from app.ncbi import _augment_params, _idconv_records, _retry_delay_seconds
+from app.ncbi import NcbiClient, _augment_params, _idconv_records, _retry_delay_seconds
 
 
 def test_idconv_records_old_format() -> None:
@@ -42,3 +42,31 @@ def test_retry_delay_prefers_retry_after_header() -> None:
 def test_retry_delay_uses_backoff_when_header_missing() -> None:
     response = httpx.Response(429)
     assert _retry_delay_seconds(response, attempt=2) == 2.4
+
+
+def test_parse_pubmed_title_with_embedded_tags() -> None:
+    xml = """
+    <PubmedArticleSet>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>39164478</PMID>
+          <Article>
+            <ArticleTitle>T<sub>reg</sub> responses in disease.</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>J Test</ISOAbbreviation>
+              <JournalIssue>
+                <PubDate>
+                  <Year>2024</Year>
+                </PubDate>
+              </JournalIssue>
+            </Journal>
+          </Article>
+        </MedlineCitation>
+      </PubmedArticle>
+    </PubmedArticleSet>
+    """
+    client = NcbiClient()
+    citations = client._parse_pubmed(xml)
+
+    assert len(citations) == 1
+    assert citations[0].title == "Treg responses in disease."
