@@ -65,6 +65,11 @@ def match_author(author: Author, target: TargetName) -> tuple[bool, str | None]:
         target_first = target.given.split(" ")[0]
         if author_first == target_first:
             return True, "given"
+        # Precision-first: if a full given name is present and does not match,
+        # do not fall back to initials (prevents Jeffrey vs James merges).
+        author_first_token = normalize_token(author_first)
+        if len(author_first_token) > 1:
+            return False, None
 
     if author_initials and target.initials and author_initials.startswith(target.initials[:1]):
         return True, "initials"

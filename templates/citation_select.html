@@ -13,6 +13,7 @@
     th, td { border-bottom: 1px solid #d9e2ec; text-align: left; vertical-align: top; padding: 0.45rem; font-size: 0.92rem; }
     th { background: #f0f4f8; }
     .warn { background: #fff4f2; }
+    .outwindow { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
   </style>
@@ -41,13 +42,14 @@
             <th>PMID / PMCID</th>
             <th>Matched Cluster(s)</th>
             <th>Affiliation</th>
+            <th>In Window</th>
             <th>Source</th>
             <th>Reason for Review</th>
           </tr>
         </thead>
         <tbody>
           {% for row in citation_selection_rows %}
-            <tr class="{% if row.needs_review %}warn{% endif %}">
+            <tr class="{% if not row.in_window %}outwindow{% elif row.needs_review %}warn{% endif %}">
               <td><input type="checkbox" name="selected_pmids" value="{{ row.pmid }}" checked></td>
               <td>{{ row.year if row.year else 'n/a' }}</td>
               <td>{{ row.journal }}</td>
@@ -58,8 +60,9 @@
               </td>
               <td>{{ row.cluster_labels }}</td>
               <td>{{ row.affiliations }}</td>
+              <td>{% if row.in_window %}yes{% else %}no{% endif %}</td>
               <td>{{ row.source_for_roles }}</td>
-              <td>{{ row.review_reason }}</td>
+              <td>{% if row.in_window %}{{ row.review_reason }}{% else %}Outside {{ start_year }}-{{ end_year }} window{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>

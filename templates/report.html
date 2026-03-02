@@ -20,6 +20,34 @@
   <div class="card">
     <h1>Publication Report</h1>
     <p><strong>{{ summary }}</strong></p>
+    {% if out_of_window_rows %}
+      <p><strong>{{ out_of_window_rows|length }}</strong> selected citation(s) were excluded because print year is outside {{ start_year }}-{{ end_year }}.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>PMID / PMCID</th>
+            <th>Year</th>
+            <th>Journal</th>
+            <th>Title</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in out_of_window_rows %}
+            <tr class="excluded">
+              <td>
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
+                {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+              </td>
+              <td>{{ row.year if row.year else 'n/a' }}</td>
+              <td>{{ row.journal }}</td>
+              <td>{{ row.title }}</td>
+              <td>excluded (out of window)</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
 
     <table>
       <thead>

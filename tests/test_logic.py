@@ -1,4 +1,4 @@
-from app.logic import analyze_citations, build_clusters, format_summary, parse_pmids, parse_target_name
+from app.logic import analyze_citations, build_clusters, format_summary, match_author, parse_pmids, parse_target_name
 from app.models import Author, Citation
 
 
@@ -72,6 +72,16 @@ def test_build_clusters_does_not_group_no_affiliation_mentions() -> None:
     assert len(matches) == 2
     assert len(clusters) == 2
     assert all(cluster.mention_count == 1 for cluster in clusters)
+
+
+def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:
+    target = parse_target_name("Jeffrey Rice")
+    matched, method = match_author(
+        _author(1, "Rice", "James", "J", "Inst A"),
+        target,
+    )
+    assert matched is False
+    assert method is None
 
 
 def test_analyze_citations_marks_first_and_senior_from_pmc_flags() -> None:

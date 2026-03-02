@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -14,6 +18,7 @@ from app.logic import (
     AnalysisResult,
     analyze_citations,
     build_clusters,
+    citation_in_window,
     format_summary,
     parse_pmids,
     parse_target_name,
@@ -30,6 +35,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Publication Counter")
 templates = Jinja2Templates(directory="templates")
 client = NcbiClient()
+RUNS_DIR = Path(os.getenv("PMCPARSER_RUNS_DIR", "/tmp/pmcparser-runs"))
 
 
 @dataclass(slots=True)
@@ -43,6 +49,7 @@ class RunState:
 
 
 RUNS: dict[str, RunState] = {}
+RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 
 
 def _to_author_list(citation: Citation) -> str:
@@ -104,6 +111,8 @@ def _build_citation_selection_rows(
     citations: list[Citation],
     matches: list[AuthorMatch],
     cluster_label_by_id: dict[str, str],
+    start_year: int,
+    end_year: int,
 ) -> list[dict[str, object]]:
     citation_by_pmid = {citation.pmid: citation for citation in citations}
     by_pmid: dict[str, dict[str, object]] = {}
@@ -159,6 +168,7 @@ def _build_citation_selection_rows(
                 "notes": "; ".join(sorted(row["notes"])),
                 "needs_review": bool(review_reasons),
                 "review_reason": "; ".join(review_reasons),
+                "in_window": bool(citation_in_window(citation_by_pmid[row["pmid"]], start_year, end_year)),
             }
         )
 
@@ -166,10 +176,232 @@ def _build_citation_selection_rows(
     return rendered
 
 
+def _build_cluster_citation_rows(
+    *,
+    citations: list[Citation],
+    matches: list[AuthorMatch],
+) -> dict[str, list[dict[str, object]]]:
+    citation_by_pmid = {citation.pmid: citation for citation in citations}
+    by_cluster: dict[str, dict[str, dict[str, object]]] = {}
+
+    for match in matches:
+        citation = citation_by_pmid.get(match.pmid)
+        if citation is None:
+            continue
+        cluster_rows = by_cluster.setdefault(match.cluster_id, {})
+        cluster_rows.setdefault(
+            match.pmid,
+            {
+                "pmid": citation.pmid,
+                "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{citation.pmid}/",
+                "year": citation.print_year,
+                "journal": citation.journal,
+                "title": citation.title,
+            },
+        )
+
+    rendered: dict[str, list[dict[str, object]]] = {}
+    for cluster_id, rows_by_pmid in by_cluster.items():
+        rows = list(rows_by_pmid.values())
+        rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+        rendered[cluster_id] = rows
+    return rendered
+
+
+def _build_out_of_window_rows(
+    *,
+    citations: list[Citation],
+    matches: list[AuthorMatch],
+    start_year: int,
+    end_year: int,
+) -> list[dict[str, object]]:
+    citation_by_pmid = {citation.pmid: citation for citation in citations}
+    selected_pmids = {match.pmid for match in matches}
+    rows: list[dict[str, object]] = []
+    for pmid in selected_pmids:
+        citation = citation_by_pmid.get(pmid)
+        if citation is None:
+            continue
+        if citation_in_window(citation, start_year, end_year):
+            continue
+        rows.append(
+            {
+                "pmid": citation.pmid,
+                "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{citation.pmid}/",
+                "pmcid": citation.pmcid,
+                "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{citation.pmcid}/" if citation.pmcid else None,
+                "year": citation.print_year,
+                "journal": citation.journal,
+                "title": citation.title,
+            }
+        )
+    rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    return rows
+
+
+def _save_run(run_id: str, run: RunState) -> None:
+    RUNS[run_id] = run
+    _save_run_to_disk(run_id, run)
+
+
+def _run_file(run_id: str) -> Path:
+    return RUNS_DIR / f"{run_id}.json"
+
+
+def _save_run_to_disk(run_id: str, run: RunState) -> None:
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        logger.warning("Refused to persist run with invalid id format: %r", run_id)
+        return
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    target = _run_file(run_id)
+    temp = target.with_suffix(".json.tmp")
+    payload = _serialize_run(run)
+    temp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    temp.replace(target)
+
+
+def _load_run_from_disk(run_id: str) -> RunState | None:
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        return None
+    target = _run_file(run_id)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to read run-state file for run_id=%s", run_id)
+        return None
+    try:
+        return _deserialize_run(payload)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to parse run-state payload for run_id=%s", run_id)
+        return None
+
+
+def _serialize_run(run: RunState) -> dict[str, Any]:
+    return {
+        "author_name": run.author_name,
+        "start_year": run.start_year,
+        "end_year": run.end_year,
+        "citations": [_serialize_citation(citation) for citation in run.citations],
+        "clusters": [_serialize_cluster(cluster) for cluster in run.clusters],
+        "matches": [_serialize_match(match) for match in run.matches],
+    }
+
+
+def _deserialize_run(payload: dict[str, Any]) -> RunState:
+    return RunState(
+        author_name=str(payload["author_name"]),
+        start_year=int(payload["start_year"]),
+        end_year=int(payload["end_year"]),
+        citations=[_deserialize_citation(item) for item in payload.get("citations", [])],
+        clusters=[_deserialize_cluster(item) for item in payload.get("clusters", [])],
+        matches=[_deserialize_match(item) for item in payload.get("matches", [])],
+    )
+
+
+def _serialize_author(author: Any) -> dict[str, Any]:
+    return {
+        "position": int(author.position),
+        "last_name": str(author.last_name),
+        "fore_name": str(author.fore_name),
+        "initials": str(author.initials),
+        "affiliation": str(author.affiliation),
+    }
+
+
+def _deserialize_author(payload: dict[str, Any]) -> Any:
+    from app.models import Author
+
+    return Author(
+        position=int(payload["position"]),
+        last_name=str(payload.get("last_name", "")),
+        fore_name=str(payload.get("fore_name", "")),
+        initials=str(payload.get("initials", "")),
+        affiliation=str(payload.get("affiliation", "")),
+    )
+
+
+def _serialize_citation(citation: Citation) -> dict[str, Any]:
+    return {
+        "pmid": citation.pmid,
+        "pmcid": citation.pmcid,
+        "title": citation.title,
+        "journal": citation.journal,
+        "print_year": citation.print_year,
+        "print_date": citation.print_date,
+        "authors": [_serialize_author(author) for author in citation.authors],
+        "source_for_roles": citation.source_for_roles,
+        "co_first_positions": sorted(citation.co_first_positions),
+        "co_senior_positions": sorted(citation.co_senior_positions),
+        "notes": list(citation.notes),
+    }
+
+
+def _deserialize_citation(payload: dict[str, Any]) -> Citation:
+    return Citation(
+        pmid=str(payload.get("pmid", "")),
+        pmcid=payload.get("pmcid"),
+        title=str(payload.get("title", "")),
+        journal=str(payload.get("journal", "")),
+        print_year=payload.get("print_year"),
+        print_date=str(payload.get("print_date", "")),
+        authors=[_deserialize_author(item) for item in payload.get("authors", [])],
+        source_for_roles=str(payload.get("source_for_roles", "pubmed")),  # type: ignore[arg-type]
+        co_first_positions={int(v) for v in payload.get("co_first_positions", [])},
+        co_senior_positions={int(v) for v in payload.get("co_senior_positions", [])},
+        notes=[str(v) for v in payload.get("notes", [])],
+    )
+
+
+def _serialize_cluster(cluster: Cluster) -> dict[str, Any]:
+    return {
+        "cluster_id": cluster.cluster_id,
+        "label": cluster.label,
+        "mention_count": cluster.mention_count,
+        "years": list(cluster.years),
+        "affiliations": list(cluster.affiliations),
+    }
+
+
+def _deserialize_cluster(payload: dict[str, Any]) -> Cluster:
+    return Cluster(
+        cluster_id=str(payload.get("cluster_id", "")),
+        label=str(payload.get("label", "")),
+        mention_count=int(payload.get("mention_count", 0)),
+        years=[int(v) for v in payload.get("years", [])],
+        affiliations=[str(v) for v in payload.get("affiliations", [])],
+    )
+
+
+def _serialize_match(match: AuthorMatch) -> dict[str, Any]:
+    return {
+        "pmid": match.pmid,
+        "position": match.position,
+        "method": match.method,
+        "author": _serialize_author(match.author),
+        "cluster_id": match.cluster_id,
+    }
+
+
+def _deserialize_match(payload: dict[str, Any]) -> AuthorMatch:
+    return AuthorMatch(
+        pmid=str(payload.get("pmid", "")),
+        position=int(payload.get("position", 0)),
+        method=str(payload.get("method", "initials")),  # type: ignore[arg-type]
+        author=_deserialize_author(payload.get("author", {})),
+        cluster_id=str(payload.get("cluster_id", "")),
+    )
+
+
 def _load_run(run_id: str) -> RunState:
     run = RUNS.get(run_id)
+    if run is not None:
+        return run
+    run = _load_run_from_disk(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found or expired")
+    RUNS[run_id] = run
     return run
 
 
@@ -184,6 +416,7 @@ def _render_analysis_result(
     start_year: int,
     end_year: int,
     force_report: bool = False,
+    out_of_window_rows: list[dict[str, object]] | None = None,
 ) -> HTMLResponse:
     if analysis.uncertain_indices and not force_report:
         logger.info(
@@ -211,6 +444,9 @@ def _render_analysis_result(
         {
             "summary": summary,
             "rows": _with_row_render_fields(analysis),
+            "out_of_window_rows": out_of_window_rows or [],
+            "start_year": start_year,
+            "end_year": end_year,
         },
     )
 
@@ -286,9 +522,22 @@ def disambiguate(
             errors.append(str(exc))
             logger.exception("Chunk fetch failed for %d PMID(s)", len(chunk))
 
-    clusters, matches = build_clusters(citations, target)
-    citation_by_pmid = {citation.pmid: citation for citation in citations}
+    in_window_citations = [
+        citation
+        for citation in citations
+        if citation_in_window(citation, start_year, end_year)
+    ]
+    excluded_out_of_window = len(citations) - len(in_window_citations)
+    logger.info(
+        "Window filter applied before disambiguation: in_window=%d, excluded_out_of_window=%d",
+        len(in_window_citations),
+        excluded_out_of_window,
+    )
+
+    clusters, matches = build_clusters(in_window_citations, target)
+    citation_by_pmid = {citation.pmid: citation for citation in in_window_citations}
     cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
+    cluster_citation_rows = _build_cluster_citation_rows(citations=in_window_citations, matches=matches)
     missing_affiliation_rows: list[dict[str, object]] = []
     for match in matches:
         citation = citation_by_pmid.get(match.pmid)
@@ -320,13 +569,16 @@ def disambiguate(
     )
 
     run_id = uuid.uuid4().hex
-    RUNS[run_id] = RunState(
-        author_name=author_name,
-        start_year=start_year,
-        end_year=end_year,
-        citations=citations,
-        clusters=clusters,
-        matches=matches,
+    _save_run(
+        run_id,
+        RunState(
+            author_name=author_name,
+            start_year=start_year,
+            end_year=end_year,
+            citations=in_window_citations,
+            clusters=clusters,
+            matches=matches,
+        ),
     )
 
     return templates.TemplateResponse(
@@ -338,8 +590,10 @@ def disambiguate(
             "start_year": start_year,
             "end_year": end_year,
             "clusters": clusters,
+            "cluster_citation_rows": cluster_citation_rows,
             "errors": errors,
             "missing_affiliation_rows": missing_affiliation_rows,
+            "excluded_out_of_window": excluded_out_of_window,
         },
     )
 
@@ -353,6 +607,7 @@ def citation_select(
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
     if not selected:
+        cluster_citation_rows = _build_cluster_citation_rows(citations=run.citations, matches=run.matches)
         return templates.TemplateResponse(
             request,
             "disambiguate.html",
@@ -362,6 +617,7 @@ def citation_select(
                 "start_year": run.start_year,
                 "end_year": run.end_year,
                 "clusters": run.clusters,
+                "cluster_citation_rows": cluster_citation_rows,
                 "errors": ["Select at least one author identity cluster."],
                 "missing_affiliation_rows": [],
             },
@@ -374,6 +630,8 @@ def citation_select(
         citations=run.citations,
         matches=selected_matches,
         cluster_label_by_id=cluster_label_by_id,
+        start_year=run.start_year,
+        end_year=run.end_year,
     )
     needs_review = any(bool(row["needs_review"]) for row in citation_selection_rows)
     logger.info(
@@ -392,6 +650,12 @@ def citation_select(
             start_year=run.start_year,
             end_year=run.end_year,
         )
+        out_of_window_rows = _build_out_of_window_rows(
+            citations=run.citations,
+            matches=selected_matches,
+            start_year=run.start_year,
+            end_year=run.end_year,
+        )
         return _render_analysis_result(
             request,
             run_id=run_id,
@@ -401,6 +665,7 @@ def citation_select(
             analysis=analysis,
             start_year=run.start_year,
             end_year=run.end_year,
+            out_of_window_rows=out_of_window_rows,
         )
 
     return templates.TemplateResponse(
@@ -449,6 +714,12 @@ def analyze(
         start_year=run.start_year,
         end_year=run.end_year,
     )
+    out_of_window_rows = _build_out_of_window_rows(
+        citations=run.citations,
+        matches=filtered_matches,
+        start_year=run.start_year,
+        end_year=run.end_year,
+    )
     return _render_analysis_result(
         request,
         run_id=run_id,
@@ -458,7 +729,7 @@ def analyze(
         analysis=analysis,
         start_year=run.start_year,
         end_year=run.end_year,
-        force_report=True,
+        out_of_window_rows=out_of_window_rows,
     )
 
 
@@ -500,6 +771,12 @@ def finalize(
 
     for idx in analysis.uncertain_indices:
         analysis.rows[idx].include = idx in accepted
+    out_of_window_rows = _build_out_of_window_rows(
+        citations=run.citations,
+        matches=filtered_matches,
+        start_year=run.start_year,
+        end_year=run.end_year,
+    )
     return _render_analysis_result(
         request,
         run_id=run_id,
@@ -509,4 +786,6 @@ def finalize(
         analysis=analysis,
         start_year=run.start_year,
         end_year=run.end_year,
+        force_report=True,
+        out_of_window_rows=out_of_window_rows,
     )

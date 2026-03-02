@@ -13,6 +13,8 @@
     table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
     th, td { border-bottom: 1px solid #d9e2ec; text-align: left; vertical-align: top; padding: 0.45rem; font-size: 0.92rem; }
     th { background: #f0f4f8; }
+    .subtable { margin-top: 0.55rem; }
+    .subtable th, .subtable td { font-size: 0.88rem; padding: 0.35rem; }
     .warn { background: #fff4f2; }
     a { color: #0f766e; text-decoration: none; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
@@ -24,6 +26,9 @@
   <div class="card">
     <h1>Step 1: Confirm Author Identity</h1>
     <p>Author: <strong>{{ author_name }}</strong> | Window: {{ start_year }}-{{ end_year }}</p>
+    {% if excluded_out_of_window and excluded_out_of_window > 0 %}
+      <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window.</p>
+    {% endif %}
 
     {% if errors %}
       <p class="error">Some retrieval errors occurred: {{ errors|join('; ') }}</p>
@@ -42,6 +47,27 @@
             </label>
             <div class="muted">Mentions: {{ cluster.mention_count }} | Years: {{ cluster.years|join(', ') if cluster.years else 'n/a' }}</div>
             <div class="muted">Affiliations: {{ cluster.affiliations|join(' | ') }}</div>
+            {% set cluster_rows = cluster_citation_rows.get(cluster.cluster_id, []) %}
+            {% if cluster_rows %}
+              <table class="subtable">
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    <th>Journal</th>
+                    <th>Title</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in cluster_rows %}
+                    <tr>
+                      <td>{{ row.year if row.year else 'n/a' }}</td>
+                      <td>{{ row.journal }}</td>
+                      <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
           </div>
         {% endfor %}
         <button type="submit">Continue</button>

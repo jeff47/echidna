@@ -242,10 +242,12 @@ class NcbiClient:
         xml_text: str,
     ) -> tuple[set[int], set[int], list[Author], int]:
         root = ET.fromstring(xml_text)
+        article_meta = root.find(".//front/article-meta")
         contribs = root.findall(".//front/article-meta/contrib-group/contrib[@contrib-type='author']")
         if not contribs:
             contribs = root.findall(".//contrib-group/contrib[@contrib-type='author']")
-        aff_by_id, aff_by_label = _extract_pmc_affiliation_maps(root)
+        aff_context = article_meta if article_meta is not None else root
+        aff_by_id, aff_by_label = _extract_pmc_affiliation_maps(aff_context)
         note_by_id = _extract_pmc_note_text_by_id(root)
 
         fn_text: dict[str, str] = {}
@@ -365,9 +367,9 @@ def _find_authors(article: ET.Element) -> list[Author]:
         fore_name = _find_text(author, "ForeName")
         initials = _find_text(author, "Initials")
         affs = [
-            " ".join("".join(a.itertext()).split())
+            _normalize_affiliation_text("".join(a.itertext()))
             for a in author.findall("AffiliationInfo/Affiliation")
-            if "".join(a.itertext()).strip()
+            if _normalize_affiliation_text("".join(a.itertext()))
         ]
         affiliation = "; ".join(affs)
         authors.append(
@@ -388,9 +390,9 @@ def _find_authors(article: ET.Element) -> list[Author]:
         if author.affiliation.strip()
     }
     article_affiliations = {
-        _clean_text("".join(node.itertext()))
+        _normalize_affiliation_text("".join(node.itertext()))
         for node in article.findall(".//Article/Affiliation")
-        if _clean_text("".join(node.itertext()))
+        if _normalize_affiliation_text("".join(node.itertext()))
     }
     shared_affiliations = author_level_affiliations | article_affiliations
     if len(shared_affiliations) == 1:
@@ -401,18 +403,20 @@ def _find_authors(article: ET.Element) -> list[Author]:
     return authors
 
 
-def _extract_pmc_affiliation_maps(root: ET.Element) -> tuple[dict[str, str], dict[str, str]]:
+def _extract_pmc_affiliation_maps(context: ET.Element) -> tuple[dict[str, str], dict[str, str]]:
     by_id: dict[str, str] = {}
     by_label: dict[str, str] = {}
-    for aff in root.findall(".//front/article-meta/aff") + root.findall(".//aff"):
+    for aff in context.findall(".//aff"):
         aff_id = (aff.attrib.get("id") or aff.attrib.get(XML_NS_ID) or "").strip()
         label = _clean_text(_find_text(aff, "label"))
-        text = _clean_text("".join(aff.itertext()))
+        text = _normalize_affiliation_text("".join(aff.itertext()))
         if text:
-            if aff_id:
+            if aff_id and aff_id not in by_id:
                 by_id[aff_id] = text
             if label:
-                by_label[_normalize_label(label)] = text
+                normalized_label = _normalize_label(label)
+                if normalized_label and normalized_label not in by_label:
+                    by_label[normalized_label] = text
     return by_id, by_label
 
 
@@ -429,7 +433,7 @@ def _extract_pmc_note_text_by_id(root: ET.Element) -> dict[str, str]:
             node_id = (node.attrib.get("id") or node.attrib.get(XML_NS_ID) or "").strip()
             if not node_id:
                 continue
-            text = _clean_text("".join(node.itertext()))
+            text = _normalize_affiliation_text("".join(node.itertext()))
             if text:
                 by_id[node_id] = text
     return by_id
@@ -442,36 +446,52 @@ def _extract_contrib_affiliation(
     aff_by_label: dict[str, str],
     note_by_id: dict[str, str],
 ) -> str:
-    collected: list[str] = []
+    direct_collected: list[str] = []
+    rid_collected: list[str] = []
 
     # Some JATS records include inline affiliation text in <aff> under each contributor.
     for aff in contrib.findall("./aff"):
-        text = _clean_text("".join(aff.itertext()))
+        text = _normalize_affiliation_text("".join(aff.itertext()))
         if text:
-            collected.append(text)
+            direct_collected.append(text)
 
+    aff_xrefs = contrib.findall(".//xref[@ref-type='aff']")
+    has_aff_xref = bool(aff_xrefs)
     for xref in contrib.findall(".//xref[@ref-type='aff']"):
         for rid in _split_reference_ids(xref.attrib.get("rid", "")):
             if rid in aff_by_id:
-                collected.append(aff_by_id[rid])
-        for label in _split_label_tokens("".join(xref.itertext())):
-            match = aff_by_label.get(_normalize_label(label))
-            if match:
-                collected.append(match)
+                rid_collected.append(aff_by_id[rid])
+    if rid_collected:
+        direct_collected.extend(rid_collected)
+    # Only use label-based affiliation lookup when explicit RID links are absent.
+    elif has_aff_xref:
+        for xref in aff_xrefs:
+            for label in _split_label_tokens("".join(xref.itertext())):
+                match = aff_by_label.get(_normalize_label(label))
+                if match:
+                    direct_collected.append(match)
 
+    # Superscript-label fallback is only used when no xref-based affiliation was recovered.
+    if not direct_collected and not has_aff_xref:
+        for sup in contrib.findall(".//sup"):
+            for label in _split_label_tokens("".join(sup.itertext())):
+                match = aff_by_label.get(_normalize_label(label))
+                if match:
+                    direct_collected.append(match)
+
+    # Precision-first: only fall back to fn/corresp note text when no direct
+    # author->affiliation linkage is available.
+    if direct_collected:
+        return "; ".join(_dedupe_preserve_order(direct_collected))
+
+    note_collected: list[str] = []
     for xref in contrib.findall(".//xref[@ref-type='fn']") + contrib.findall(".//xref[@ref-type='corresp']"):
         for rid in _split_reference_ids(xref.attrib.get("rid", "")):
             note_text = note_by_id.get(rid, "")
             if _looks_like_affiliation_text(note_text):
-                collected.append(note_text)
+                note_collected.append(note_text)
 
-    for sup in contrib.findall(".//sup"):
-        for label in _split_label_tokens("".join(sup.itertext())):
-            match = aff_by_label.get(_normalize_label(label))
-            if match:
-                collected.append(match)
-
-    return "; ".join(_dedupe_preserve_order(collected))
+    return "; ".join(_dedupe_preserve_order(note_collected))
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -487,6 +507,19 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 
 def _clean_text(value: str) -> str:
     return " ".join(value.split())
+
+
+def _normalize_affiliation_text(value: str) -> str:
+    cleaned = _clean_text(value)
+    # Common legacy formatting artifacts: "1Department", "and2 Department".
+    cleaned = re.sub(r"\band(?=\d)", "and ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(?<![A-Za-z0-9])(\d+)(?=[A-Za-z])", r"\1 ", cleaned)
+    # Remove numeric affiliation markers that are typically superscript references.
+    cleaned = re.sub(r"(^|[;,\(\[]\s*|\band\s+)\d+\s+(?=[A-Za-z])", r"\1", cleaned, flags=re.IGNORECASE)
+    cleaned = _clean_text(cleaned)
+    cleaned = _collapse_merged_department_markers(cleaned)
+    cleaned = _strip_embedded_numbered_affiliation_tail(cleaned)
+    return cleaned
 
 
 def _initials_from_name(value: str) -> str:
@@ -515,6 +548,37 @@ def _looks_like_affiliation_text(value: str) -> bool:
     if any(pattern in lowered for pattern in SENIOR_PATTERNS):
         return False
     return any(pattern in lowered for pattern in AFFILIATION_HINT_PATTERNS)
+
+
+def _strip_embedded_numbered_affiliation_tail(value: str) -> str:
+    # Some legacy strings embed multiple numbered affiliations into one text blob,
+    # e.g. "... Columbia University, USA. 2 Department of ... Albert Einstein ..."
+    # Keep the first segment for precision-focused attribution.
+    marker = re.search(
+        r"([.;,])\s+\d+\s+(?=(departments?|division|institute|university|school|college|hospital|laboratory|center|centre)\b)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if marker is None:
+        return value
+    trimmed = value[: marker.start()].strip()
+    return trimmed.rstrip(";,")
+
+
+def _collapse_merged_department_markers(value: str) -> str:
+    # Precision-first cleanup for merged numbered affiliations like:
+    # "Department of A, and Department of B, Institute ..."
+    # Keep first department and shared institution tail.
+    match = re.match(
+        r"^(Department of [^,]+),\s+and Department of [^,]+,\s+(.+)$",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return value
+    first_department = match.group(1).strip()
+    institution_tail = match.group(2).strip()
+    return f"{first_department}, {institution_tail}"
 
 
 def _augment_params(

@@ -133,6 +133,40 @@ def test_extract_contrib_affiliation_handles_multi_rid_and_labels() -> None:
     assert "Department of Medicine" in affiliation
 
 
+def test_extract_contrib_affiliation_prefers_rid_over_label_text() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>Rice</surname><given-names>Jeffrey</given-names></name>
+              <xref ref-type="aff" rid="a1">1,2</xref>
+            </contrib>
+          </contrib-group>
+          <aff id="a1"><label>1</label>Department of Medicine, Columbia University, New York, USA.</aff>
+          <aff id="a2"><label>2</label>Department of Microbiology, Albert Einstein College of Medicine, Bronx, NY, USA.</aff>
+        </article-meta>
+      </front>
+    </article>
+    """
+    root = ET.fromstring(xml)
+    contrib = root.find(".//contrib")
+    assert contrib is not None
+    aff_by_id, aff_by_label = _extract_pmc_affiliation_maps(root)
+    note_by_id = _extract_pmc_note_text_by_id(root)
+
+    affiliation = _extract_contrib_affiliation(
+        contrib,
+        aff_by_id=aff_by_id,
+        aff_by_label=aff_by_label,
+        note_by_id=note_by_id,
+    )
+
+    assert "Columbia University" in affiliation
+    assert "Albert Einstein" not in affiliation
+
+
 def test_extract_contrib_affiliation_uses_fn_note_when_affiliation_like() -> None:
     xml = """
     <article>
@@ -165,3 +199,64 @@ def test_extract_contrib_affiliation_uses_fn_note_when_affiliation_like() -> Non
     )
 
     assert "NIH" in affiliation
+
+
+def test_extract_contrib_affiliation_prefers_direct_aff_over_note_fallback() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>Rice</surname><given-names>Jeffrey</given-names></name>
+              <xref ref-type="aff" rid="a1" />
+              <xref ref-type="fn" rid="fn_aff" />
+            </contrib>
+          </contrib-group>
+          <aff id="a1">Department of Medicine, Columbia University, New York, USA.</aff>
+          <author-notes>
+            <fn id="fn_aff">Department of Microbiology, Albert Einstein College of Medicine, Bronx, NY, USA.</fn>
+          </author-notes>
+        </article-meta>
+      </front>
+    </article>
+    """
+    root = ET.fromstring(xml)
+    contrib = root.find(".//contrib")
+    assert contrib is not None
+    aff_by_id, aff_by_label = _extract_pmc_affiliation_maps(root)
+    note_by_id = _extract_pmc_note_text_by_id(root)
+
+    affiliation = _extract_contrib_affiliation(
+        contrib,
+        aff_by_id=aff_by_id,
+        aff_by_label=aff_by_label,
+        note_by_id=note_by_id,
+    )
+
+    assert "Columbia University" in affiliation
+    assert "Albert Einstein" not in affiliation
+
+
+def test_extract_pmc_affiliation_maps_prefers_article_meta_aff_when_ids_repeat() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <aff id="a1">Department of Medicine, Columbia University, New York, USA.</aff>
+        </article-meta>
+      </front>
+      <body>
+        <sec>
+          <aff id="a1">Department of Microbiology, Albert Einstein College of Medicine, Bronx, NY, USA.</aff>
+        </sec>
+      </body>
+    </article>
+    """
+    root = ET.fromstring(xml)
+    article_meta = root.find(".//front/article-meta")
+    assert article_meta is not None
+
+    aff_by_id, _ = _extract_pmc_affiliation_maps(article_meta)
+
+    assert aff_by_id["a1"].startswith("Department of Medicine, Columbia University")
