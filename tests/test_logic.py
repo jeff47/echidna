@@ -59,6 +59,31 @@ def test_parse_target_name_accepts_surname_initial_formats() -> None:
     assert t2.style == "initials"
 
 
+@pytest.mark.parametrize(
+    ("raw", "style", "surname", "given", "initials"),
+    [
+        ("Rice, Jeffrey", "full", "rice", "jeffrey", "j"),
+        ("Rice, Jeffrey,", "full", "rice", "jeffrey", "j"),
+        ("Rice, J", "initials", "rice", "j", "j"),
+        ("Rice, J.", "initials", "rice", "j", "j"),
+        ("RiCe, jS", "initials", "rice", "js", "js"),
+    ],
+)
+def test_parse_target_name_accepts_comma_forms_and_mixed_case(
+    raw: str,
+    style: str,
+    surname: str,
+    given: str,
+    initials: str,
+) -> None:
+    parsed = parse_target_name(raw)
+
+    assert parsed.style == style
+    assert parsed.surname == surname
+    assert parsed.given == given
+    assert parsed.initials == initials
+
+
 def test_initials_style_matches_surname_plus_initials() -> None:
     target = parse_target_name("Rice JS")
     author = _author(1, "Rice", "Jeffrey Stephen", "JS", "Inst")
@@ -66,6 +91,24 @@ def test_initials_style_matches_surname_plus_initials() -> None:
 
     assert matched is True
     assert method == "initials"
+
+def test_initials_style_matches_when_record_has_only_first_initial() -> None:
+    target = parse_target_name("Sage PT")
+    author = _author(1, "Sage", "Peter", "P", "Inst")
+    matched, method = match_author(author, target)
+
+    assert matched is True
+    assert method == "initials"
+
+
+def test_full_name_style_ignores_input_punctuation_for_match() -> None:
+    target = parse_target_name("Rice, Jeffrey,")
+    author = _author(1, "Rice", "Jeffrey", "J", "Inst")
+    matched, method = match_author(author, target)
+
+    assert matched is True
+    assert method == "given"
+
 
 def test_parse_target_orcid_accepts_normalized_and_url_forms() -> None:
     assert parse_target_orcid("0000-0002-1825-0097") == "0000-0002-1825-0097"

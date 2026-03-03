@@ -70,6 +70,9 @@ def extract_initials(given: str) -> str:
     return "".join(p[0].lower() for p in parts)
 
 
+def _normalized_name_tokens(tokens: list[str]) -> list[str]:
+    cleaned = [normalize_token(token) for token in tokens]
+    return [token for token in cleaned if token]
 
 
 def _looks_like_initial_token(token: str) -> bool:
@@ -78,7 +81,7 @@ def _looks_like_initial_token(token: str) -> bool:
         return False
     if len(cleaned) == 1:
         return True
-    return token.isupper() or "." in token
+    return token.isupper() or "." in token or len(cleaned) <= 2
 
 def parse_pmids(raw_text: str) -> list[str]:
     candidates = re.findall(r"\d+", raw_text)
@@ -99,18 +102,19 @@ def parse_target_name(raw_name: str) -> TargetName:
     if "," in raw:
         surname_part, given_part = raw.split(",", 1)
         surname = normalize_token(surname_part)
-        given_tokens = [t for t in given_part.strip().split() if t]
-        if surname and given_tokens:
+        given_tokens = [t for t in re.split(r"[,\s]+", given_part.strip()) if t]
+        cleaned_given_tokens = _normalized_name_tokens(given_tokens)
+        if surname and cleaned_given_tokens:
             if all(_looks_like_initial_token(token) for token in given_tokens):
                 initials = "".join(normalize_token(token) for token in given_tokens)
                 return TargetName(
                     raw=raw,
                     surname=surname,
-                    given=normalize_text(" ".join(given_tokens)),
+                    given=" ".join(cleaned_given_tokens),
                     initials=initials,
                     style="initials",
                 )
-            given = normalize_text(" ".join(given_tokens))
+            given = " ".join(cleaned_given_tokens)
             initials = extract_initials(given)
             return TargetName(raw=raw, surname=surname, given=given, initials=initials, style="full")
 
@@ -125,7 +129,7 @@ def parse_target_name(raw_name: str) -> TargetName:
         return TargetName(
             raw=raw,
             surname=normalize_token(first),
-            given=normalize_text(" ".join(rest)),
+            given=" ".join(_normalized_name_tokens(rest)),
             initials=initials,
             style="initials",
         )
@@ -137,12 +141,12 @@ def parse_target_name(raw_name: str) -> TargetName:
         return TargetName(
             raw=raw,
             surname=surname,
-            given=normalize_text(" ".join(given_tokens)),
+            given=" ".join(_normalized_name_tokens(given_tokens)),
             initials=initials,
             style="initials",
         )
 
-    given = normalize_text(" ".join(given_tokens))
+    given = " ".join(_normalized_name_tokens(given_tokens))
     initials = extract_initials(given)
     return TargetName(raw=raw, surname=surname, given=given, initials=initials, style="full")
 
@@ -243,19 +247,21 @@ def match_author(author: Author, target: TargetName, target_orcid: str = "") -> 
     author_initials = normalize_token(author.initials).lower() or extract_initials(author.fore_name)
 
     if target.style == "initials":
-        if author_initials and target.initials and author_initials.startswith(target.initials):
-            return True, "initials"
+        if author_initials and target.initials:
+            if author_initials.startswith(target.initials) or target.initials.startswith(author_initials):
+                return True, "initials"
         return False, None
 
     if author_given and target.given:
-        # Prefix matching handles cases like "John Michael" vs "John M"
+        # Compare normalized first tokens to tolerate punctuation in user input.
         author_first = author_given.split(" ")[0]
         target_first = target.given.split(" ")[0]
-        if author_first == target_first:
+        author_first_token = normalize_token(author_first)
+        target_first_token = normalize_token(target_first)
+        if author_first_token and author_first_token == target_first_token:
             return True, "given"
         # Precision-first: if a full given name is present and does not match,
         # do not fall back to initials (prevents Jeffrey vs James merges).
-        author_first_token = normalize_token(author_first)
         if len(author_first_token) > 1:
             return False, None
 

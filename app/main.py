@@ -596,7 +596,10 @@ def _filter_matches_for_analysis(
 
 def _save_run(run_id: str, run: RunState) -> None:
     RUNS[run_id] = run
-    _save_run_to_disk(run_id, run)
+    try:
+        _save_run_to_disk(run_id, run)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Run-state disk persistence skipped for run_id=%s: %s", run_id, exc)
 
 
 def _run_file(run_id: str) -> Path:
@@ -618,13 +621,13 @@ def _save_run_to_disk(run_id: str, run: RunState) -> None:
 def _load_run_from_disk(run_id: str) -> RunState | None:
     if not RUN_ID_PATTERN.fullmatch(run_id):
         return None
-    target = _run_file(run_id)
-    if not target.exists():
-        return None
     try:
+        target = _run_file(run_id)
+        if not target.exists():
+            return None
         payload = json.loads(target.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to read run-state file for run_id=%s", run_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Run-state disk load skipped for run_id=%s: %s", run_id, exc)
         return None
     try:
         return _deserialize_run(payload)
