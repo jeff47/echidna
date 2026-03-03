@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.logic import (
@@ -60,6 +60,8 @@ class RunState:
 RUNS: dict[str, RunState] = {}
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 YEAR_OPTION_MIN = 1950
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LANDING_IMAGE_PATH = PROJECT_ROOT / "echidna.jpg"
 
 
 def _to_author_list(citation: Citation) -> str:
@@ -857,6 +859,13 @@ def index(request: Request) -> HTMLResponse:
             "error": None,
         },
     )
+
+
+@app.get("/echidna.jpg", include_in_schema=False)
+def landing_image() -> FileResponse:
+    if not LANDING_IMAGE_PATH.is_file():
+        raise HTTPException(status_code=404, detail="echidna.jpg not found")
+    return FileResponse(LANDING_IMAGE_PATH, media_type="image/jpeg")
 
 
 @app.post("/disambiguate", response_class=HTMLResponse)

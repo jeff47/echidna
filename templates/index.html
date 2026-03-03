@@ -17,8 +17,14 @@
     main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
     h1 { margin-top: 0; }
+    .brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.4rem; }
+    .brand img { width: 92px; height: 92px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); }
+    .brand .tagline { margin: 0.35rem 0 0; font-size: 0.95rem; }
+    .brand .tagline strong { font-weight: 700; }
     label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
     input, textarea, select { width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; background: white; }
+    .author-label { font-size: 0.92rem; }
+    .author-input { max-width: 22rem; font-size: 0.92rem; padding: 0.5rem; }
     .year-select { width: 10rem; max-width: 100%; }
     .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
     .checkbox-row input[type="checkbox"] { width: auto; padding: 0; margin: 0; border: none; }
@@ -26,20 +32,31 @@
     .year-field { display: flex; flex-direction: column; }
     .year-field label { margin-top: 0.75rem; }
     .year-inline-toggle { margin: 0 0 0.1rem; white-space: nowrap; }
+    .inline-label { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .inline-label a { font-size: 0.88rem; color: #0f766e; text-decoration: none; }
+    .inline-label a:hover { text-decoration: underline; }
     button { margin-top: 1rem; background: var(--accent); color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .error { color: #b42318; margin-top: 0.5rem; }
-    @media (max-width: 700px) { .year-row { align-items: stretch; } }
+    @media (max-width: 700px) {
+      .year-row { align-items: stretch; }
+      .author-input { max-width: 100%; }
+    }
   </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <h1>ECHIDNA</h1>
-    <p>Extract Citations, Handle Institutional Data, and Normalize Authors.</p>
+    <div class="brand">
+      <img src="/echidna.jpg" alt="ECHIDNA logo">
+      <div>
+        <h1>ECHIDNA</h1>
+        <p class="tagline"><strong>E</strong>xtract <strong>C</strong>itations, <strong>H</strong>andle <strong>I</strong>nstitutional <strong>D</strong>ata, and <strong>N</strong>ormalize <strong>A</strong>uthors.</p>
+      </div>
+    </div>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
     <form method="post" action="/disambiguate" enctype="multipart/form-data">
-      <label for="author_name">Author Name</label>
-      <input id="author_name" name="author_name" value="{{ author_name }}" required>
+      <label for="author_name" class="author-label">Author Name</label>
+      <input id="author_name" class="author-input" name="author_name" value="{{ author_name }}" required>
 
       <div class="year-row">
         <div class="year-field">
@@ -75,7 +92,10 @@
         Peer-reviewed only (exclude preprints, editorials, comments, letters, news, etc.)
       </label>
 
-      <label for="extra_excluded_types">Extra Publication Types To Exclude (optional)</label>
+      <label for="extra_excluded_types" class="inline-label">
+        Extra Publication Types To Ignore (optional)
+        <a href="https://www.nlm.nih.gov/mesh/pubtypes.html" target="_blank" rel="noopener">Publication type reference</a>
+      </label>
       <input id="extra_excluded_types" name="extra_excluded_types" value="{{ extra_excluded_types }}" placeholder="e.g. case reports, congresses">
 
       <button type="submit">Find Author Clusters</button>
