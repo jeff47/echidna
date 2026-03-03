@@ -1,6 +1,12 @@
 import httpx
 
-from app.ncbi import NcbiClient, _augment_params, _idconv_records, _retry_delay_seconds
+from app.ncbi import (
+    NcbiClient,
+    _augment_params,
+    _extract_pmc_article_doi,
+    _idconv_records,
+    _retry_delay_seconds,
+)
 
 
 def test_idconv_records_old_format() -> None:
@@ -104,3 +110,46 @@ def test_parse_pubmed_title_with_embedded_tags() -> None:
 
     assert len(citations) == 1
     assert citations[0].title == "Treg responses in disease."
+
+
+def test_parse_pubmed_extracts_doi_from_article_id() -> None:
+    xml = """
+    <PubmedArticleSet>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>999</PMID>
+          <Article>
+            <ArticleTitle>DOI Test</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>J Test</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue>
+            </Journal>
+          </Article>
+        </MedlineCitation>
+        <PubmedData>
+          <ArticleIdList>
+            <ArticleId IdType="doi">https://doi.org/10.1000/test-doi.1</ArticleId>
+          </ArticleIdList>
+        </PubmedData>
+      </PubmedArticle>
+    </PubmedArticleSet>
+    """
+    client = NcbiClient()
+    citations = client._parse_pubmed(xml)
+
+    assert len(citations) == 1
+    assert citations[0].doi == "10.1000/test-doi.1"
+
+
+def test_extract_pmc_article_doi_from_article_meta() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <article-id pub-id-type="doi">doi:10.2000/example.2</article-id>
+        </article-meta>
+      </front>
+    </article>
+    """
+
+    assert _extract_pmc_article_doi(xml) == "10.2000/example.2"

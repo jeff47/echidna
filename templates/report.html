@@ -110,6 +110,7 @@
             <th>Title</th>
             <th>Journal</th>
             <th>Date</th>
+            <th>DOI</th>
             <th>Publication Type(s)</th>
             <th>Authors</th>
             <th>Counted As</th>
@@ -129,6 +130,7 @@
               <td>{{ row.title }}</td>
               <td>{{ row.journal }}</td>
               <td>{{ row.print_date }}</td>
+              <td>{% if row.doi_link %}<a href="{{ row.doi_link }}" target="_blank" rel="noopener">{{ row.doi }}</a>{% else %}(missing){% endif %}</td>
               <td>{{ row.publication_types }}</td>
               <td>{{ row.authors_html|safe }}</td>
               <td>{{ row.counted_as_report }}</td>

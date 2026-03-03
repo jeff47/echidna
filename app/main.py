@@ -183,8 +183,10 @@ def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]
                 "idx": idx,
                 "pmid": row.citation.pmid,
                 "pmcid": row.citation.pmcid,
+                "doi": row.citation.doi,
                 "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{row.citation.pmid}/",
                 "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{row.citation.pmcid}/" if row.citation.pmcid else None,
+                "doi_link": f"https://doi.org/{row.citation.doi}" if row.citation.doi else None,
                 "title": row.citation.title,
                 "journal": row.citation.journal,
                 "print_date": row.citation.print_date,
@@ -284,6 +286,7 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
             "PMID/PMCID",
             "PubMed Link",
             "PMC Link",
+            "DOI",
             "Title",
             "Journal",
             "Date",
@@ -302,6 +305,7 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
                 pmid_pmcid,
                 "PubMed",
                 "PMC" if row["pmcid_link"] else "",
+                row["doi"] or "",
                 row["title"],
                 row["journal"],
                 row["print_date"],
@@ -318,18 +322,23 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
             pmc_cell = sheet.cell(row=current_row, column=3)
             pmc_cell.hyperlink = str(row["pmcid_link"])
             pmc_cell.style = "Hyperlink"
+        if row["doi_link"]:
+            doi_cell = sheet.cell(row=current_row, column=4)
+            doi_cell.hyperlink = str(row["doi_link"])
+            doi_cell.style = "Hyperlink"
 
     sheet.freeze_panes = "A2"
     column_widths = {
         "A": 22,
         "B": 14,
         "C": 10,
-        "D": 85,
-        "E": 24,
-        "F": 14,
-        "G": 56,
-        "H": 24,
-        "I": 20,
+        "D": 28,
+        "E": 85,
+        "F": 24,
+        "G": 14,
+        "H": 56,
+        "I": 24,
+        "J": 20,
     }
     for col, width in column_widths.items():
         sheet.column_dimensions[col].width = width
@@ -724,6 +733,7 @@ def _serialize_citation(citation: Citation) -> dict[str, Any]:
         "co_first_positions": sorted(citation.co_first_positions),
         "co_senior_positions": sorted(citation.co_senior_positions),
         "notes": list(citation.notes),
+        "doi": citation.doi,
     }
 
 
@@ -741,6 +751,7 @@ def _deserialize_citation(payload: dict[str, Any]) -> Citation:
         co_first_positions={int(v) for v in payload.get("co_first_positions", [])},
         co_senior_positions={int(v) for v in payload.get("co_senior_positions", [])},
         notes=[str(v) for v in payload.get("notes", [])],
+        doi=(str(payload.get("doi", "")).strip() or None),
     )
 
 

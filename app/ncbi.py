@@ -76,6 +76,7 @@ AFFILIATION_FOOTNOTE_TARGET_WORDS = (
     "unit",
 )
 SUPERSCRIPT_TRANSLATION = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉", "01234567890123456789")
+DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ class NcbiClient:
                 continue
             try:
                 pmc_xml = self._fetch_pmc_xml(citation.pmcid)
+                pmc_doi = _extract_pmc_article_doi(pmc_xml)
+                if pmc_doi and not citation.doi:
+                    citation.doi = pmc_doi
                 co_first, co_senior, pmc_authors, pmc_count = self._extract_pmc_enrichment(pmc_xml)
                 if pmc_count and pmc_count != len(citation.authors):
                     citation.notes.append(
@@ -155,6 +159,9 @@ class NcbiClient:
                 citation.source_for_roles = "pubmed"
                 citation.notes.append(f"PMC fetch/parse failed: {exc}")
                 logger.warning("PMID %s PMC fetch/parse failed: %s", citation.pmid, exc)
+
+            if not citation.doi:
+                citation.notes.append("DOI not found in PubMed/PMC metadata")
 
         return citations
 
@@ -252,6 +259,7 @@ class NcbiClient:
 
             pub_date = _find_pub_date(article)
             authors = _find_authors(article)
+            doi = _extract_pubmed_article_doi(article)
 
             citations.append(
                 Citation(
@@ -264,6 +272,7 @@ class NcbiClient:
                     authors=authors,
                     publication_types=_find_publication_types(article),
                     source_for_roles="pubmed",
+                    doi=doi or None,
                 )
             )
 
@@ -474,6 +483,48 @@ def _extract_pubmed_author_orcid(author: ET.Element) -> str:
             return text
 
     return ""
+
+def _normalize_doi(value: str) -> str:
+    raw = _clean_text(value)
+    if not raw:
+        return ""
+    raw = DOI_URL_PREFIX.sub("", raw)
+    raw = re.sub(r"^doi:\s*", "", raw, flags=re.IGNORECASE)
+    raw = raw.strip().strip(".,;")
+    return raw
+
+
+def _extract_pubmed_article_doi(article: ET.Element) -> str:
+    for node in article.findall(".//PubmedData/ArticleIdList/ArticleId"):
+        id_type = (node.attrib.get("IdType") or node.attrib.get("idtype") or "").strip().lower()
+        if id_type != "doi":
+            continue
+        doi = _normalize_doi("".join(node.itertext()))
+        if doi:
+            return doi
+
+    for node in article.findall(".//Article/ELocationID"):
+        id_type = (node.attrib.get("EIdType") or node.attrib.get("eidtype") or "").strip().lower()
+        if id_type != "doi":
+            continue
+        doi = _normalize_doi("".join(node.itertext()))
+        if doi:
+            return doi
+
+    return ""
+
+
+def _extract_pmc_article_doi(xml_text: str) -> str:
+    root = ET.fromstring(xml_text)
+    for node in root.findall(".//front/article-meta/article-id"):
+        pub_id_type = (node.attrib.get("pub-id-type") or "").strip().lower()
+        if pub_id_type != "doi":
+            continue
+        doi = _normalize_doi("".join(node.itertext()))
+        if doi:
+            return doi
+    return ""
+
 
 def _find_publication_types(article: ET.Element) -> list[str]:
     values: list[str] = []

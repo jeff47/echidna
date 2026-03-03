@@ -28,6 +28,7 @@ class Citation:
     co_first_positions: set[int] = field(default_factory=set)
     co_senior_positions: set[int] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
+    doi: str | None = None
 
 
 @dataclass(slots=True)
