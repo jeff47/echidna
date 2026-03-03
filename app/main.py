@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import csv
+import html
 import io
 import json
 import logging
@@ -32,22 +32,22 @@ from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
 
 logging.basicConfig(
-    level=os.getenv("PMCPARSER_LOG_LEVEL", "INFO").upper(),
+    level=os.getenv("ECHIDNA_LOG_LEVEL", os.getenv("PMCPARSER_LOG_LEVEL", "INFO")).upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Publication Counter")
+app = FastAPI(title="ECHIDNA")
 templates = Jinja2Templates(directory="templates")
 client = NcbiClient()
-RUNS_DIR = Path(os.getenv("PMCPARSER_RUNS_DIR", "/tmp/pmcparser-runs"))
+RUNS_DIR = Path(os.getenv("ECHIDNA_RUNS_DIR", os.getenv("PMCPARSER_RUNS_DIR", "/tmp/echidna-runs")))
 
 
 @dataclass(slots=True)
 class RunState:
     author_name: str
-    start_year: int
-    end_year: int
+    start_year: int | None
+    end_year: int | None
     peer_reviewed_only: bool
     excluded_type_terms: list[str]
     citations: list[Citation]
@@ -59,23 +59,47 @@ class RunState:
 
 RUNS: dict[str, RunState] = {}
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+YEAR_OPTION_MIN = 1950
 
 
 def _to_author_list(citation: Citation) -> str:
     return ", ".join(f"{a.last_name} {a.initials}".strip() for a in citation.authors)
 
 
+def _to_author_list_html(citation: Citation, highlight_positions: set[int]) -> str:
+    parts: list[str] = []
+    for author in citation.authors:
+        name = f"{author.last_name} {author.initials}".strip()
+        escaped = html.escape(name)
+        if author.position in highlight_positions:
+            parts.append(f"<strong>{escaped}</strong>")
+        else:
+            parts.append(escaped)
+    return ", ".join(parts)
+
+
+def _year_options() -> list[int]:
+    current = date.today().year
+    return list(range(current, YEAR_OPTION_MIN - 1, -1))
+
+
+def _year_window_label(start_year: int | None, end_year: int | None) -> str:
+    if start_year is None or end_year is None:
+        return "all years"
+    return f"{start_year}-{end_year}"
+
+
 def _default_correction_mode(row: Any) -> str:
     if not row.include:
         return "exclude"
     if row.is_review and row.counted_review_senior:
-        return "review_senior"
+        return "first_senior_review"
     if row.is_review:
-        return "review"
-    if row.counted_senior:
-        return "senior"
+        return "coauthor_review"
+    if row.counted_first or row.counted_senior:
+        return "first_senior_author"
     if row.counted_overall:
-        return "overall"
+        return "coauthor"
     return "exclude"
 
 
@@ -86,6 +110,13 @@ def _counted_as_category(row: Any) -> str:
 
 
 def _apply_correction_mode(row: Any, mode: str) -> None:
+    mode_aliases = {
+        "overall": "coauthor",
+        "senior": "first_senior_author",
+        "review": "coauthor_review",
+        "review_senior": "first_senior_review",
+    }
+    mode = mode_aliases.get(mode, mode)
     if mode == "exclude":
         row.include = False
         row.counted_overall = False
@@ -94,7 +125,7 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_review_senior = False
         row.is_review = False
         return
-    if mode == "overall":
+    if mode == "coauthor":
         row.include = True
         row.counted_overall = True
         row.counted_first = False
@@ -102,7 +133,7 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_review_senior = False
         row.is_review = False
         return
-    if mode == "senior":
+    if mode == "first_senior_author":
         row.include = True
         row.counted_overall = True
         row.counted_first = False
@@ -110,7 +141,7 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_review_senior = False
         row.is_review = False
         return
-    if mode == "review":
+    if mode == "coauthor_review":
         row.include = True
         row.counted_overall = False
         row.counted_first = False
@@ -118,7 +149,7 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_review_senior = False
         row.is_review = True
         return
-    if mode == "review_senior":
+    if mode == "first_senior_review":
         row.include = True
         row.counted_overall = False
         row.counted_first = False
@@ -147,6 +178,7 @@ def _with_row_render_fields(analysis: AnalysisResult) -> list[dict[str, object]]
                 "journal": row.citation.journal,
                 "print_date": row.citation.print_date,
                 "authors": _to_author_list(row.citation),
+                "authors_html": _to_author_list_html(row.citation, row.matched_positions),
                 "publication_types": ", ".join(row.citation.publication_types) if row.citation.publication_types else "(unknown)",
                 "counted_as": counted_as,
                 "counted_as_report": counted_as_report,
@@ -219,6 +251,89 @@ def _rebuild_analysis_with_overrides(
     return analysis, filtered_matches
 
 
+def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> Response:
+    try:
+        from openpyxl import Workbook
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Excel export dependency missing: {exc}") from exc
+
+    row_data = _with_row_render_fields(analysis)
+    excluded_rows = [row for row in row_data if not row["include"]]
+    included_pubmed_rows = [row for row in row_data if row["include"] and row["role_source"] != "pmc"]
+    included_pmc_rows = [row for row in row_data if row["include"] and row["role_source"] == "pmc"]
+    report_rows = excluded_rows + included_pubmed_rows + included_pmc_rows
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Publications"
+    sheet.append(
+        [
+            "PMID/PMCID",
+            "PubMed Link",
+            "PMC Link",
+            "Title",
+            "Journal",
+            "Date",
+            "Authors",
+            "Publication Type",
+            "Counted as",
+        ]
+    )
+
+    for row in report_rows:
+        pmid_pmcid = f"PMID {row['pmid']}"
+        if row["pmcid"]:
+            pmid_pmcid = f"{pmid_pmcid} | {row['pmcid']}"
+        sheet.append(
+            [
+                pmid_pmcid,
+                "PubMed",
+                "PMC" if row["pmcid_link"] else "",
+                row["title"],
+                row["journal"],
+                row["print_date"],
+                row["authors"],
+                row["publication_types"],
+                row["counted_as_report"],
+            ]
+        )
+        current_row = sheet.max_row
+        pubmed_cell = sheet.cell(row=current_row, column=2)
+        pubmed_cell.hyperlink = str(row["pmid_link"])
+        pubmed_cell.style = "Hyperlink"
+        if row["pmcid_link"]:
+            pmc_cell = sheet.cell(row=current_row, column=3)
+            pmc_cell.hyperlink = str(row["pmcid_link"])
+            pmc_cell.style = "Hyperlink"
+
+    sheet.freeze_panes = "A2"
+    column_widths = {
+        "A": 22,
+        "B": 14,
+        "C": 10,
+        "D": 85,
+        "E": 24,
+        "F": 14,
+        "G": 56,
+        "H": 24,
+        "I": 20,
+    }
+    for col, width in column_widths.items():
+        sheet.column_dimensions[col].width = width
+
+    if run.start_year is None or run.end_year is None:
+        filename = "echidna_all_years.xlsx"
+    else:
+        filename = f"echidna_{run.start_year}_{run.end_year}.xlsx"
+    output = io.BytesIO()
+    workbook.save(output)
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _missing_affiliation_reason(citation: Citation, affiliation: str) -> str:
     if affiliation.strip():
         return ""
@@ -247,8 +362,8 @@ def _build_citation_selection_rows(
     matches: list[AuthorMatch],
     all_matches: list[AuthorMatch] | None = None,
     cluster_label_by_id: dict[str, str],
-    start_year: int,
-    end_year: int,
+    start_year: int | None,
+    end_year: int | None,
 ) -> list[dict[str, object]]:
     if all_matches is None:
         all_matches = matches
@@ -317,6 +432,7 @@ def _build_citation_selection_rows(
                 "publication_types": row["publication_types"],
                 "cluster_labels": " | ".join(sorted(row["cluster_labels"])),
                 "affiliations": " | ".join(sorted(row["affiliations"])) if row["affiliations"] else "(no affiliation listed)",
+                "authors_html": _to_author_list_html(citation_by_pmid[pmid], set(row["positions"])),
                 "notes": "; ".join(sorted(row["notes"])),
                 "needs_review": bool(review_reasons),
                 "review_reason": "; ".join(review_reasons),
@@ -389,10 +505,12 @@ def _build_out_of_window_rows(
     *,
     citations: list[Citation],
     matches: list[AuthorMatch],
-    start_year: int,
-    end_year: int,
+    start_year: int | None,
+    end_year: int | None,
     forced_include_pmids: set[str] | None = None,
 ) -> list[dict[str, object]]:
+    if start_year is None or end_year is None:
+        return []
     if forced_include_pmids is None:
         forced_include_pmids = set()
     citation_by_pmid = {citation.pmid: citation for citation in citations}
@@ -527,10 +645,12 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
 
 
 def _deserialize_run(payload: dict[str, Any]) -> RunState:
+    start_raw = payload.get("start_year")
+    end_raw = payload.get("end_year")
     return RunState(
         author_name=str(payload["author_name"]),
-        start_year=int(payload["start_year"]),
-        end_year=int(payload["end_year"]),
+        start_year=(int(start_raw) if start_raw is not None else None),
+        end_year=(int(end_raw) if end_raw is not None else None),
         peer_reviewed_only=bool(payload.get("peer_reviewed_only", False)),
         excluded_type_terms=[str(v) for v in payload.get("excluded_type_terms", [])],
         citations=[_deserialize_citation(item) for item in payload.get("citations", [])],
@@ -657,8 +777,8 @@ def _render_analysis_result(
     selected_excluded_pmids: set[str],
     pmid_filter_enabled: int,
     analysis: AnalysisResult,
-    start_year: int,
-    end_year: int,
+    start_year: int | None,
+    end_year: int | None,
     force_report: bool = False,
     out_of_window_rows: list[dict[str, object]] | None = None,
 ) -> HTMLResponse:
@@ -708,6 +828,7 @@ def _render_analysis_result(
             "out_of_window_rows": out_of_window_rows or [],
             "start_year": start_year,
             "end_year": end_year,
+            "year_window_label": _year_window_label(start_year, end_year),
             "run_id": run_id,
             "selected_cluster_ids": sorted(selected_cluster_ids),
             "selected_pmids": sorted(selected_pmids),
@@ -730,7 +851,9 @@ def index(request: Request) -> HTMLResponse:
             "end_year": year,
             "pmids": "",
             "peer_reviewed_only": True,
+            "all_years": False,
             "extra_excluded_types": "",
+            "year_options": _year_options(),
             "error": None,
         },
     )
@@ -744,17 +867,20 @@ def disambiguate(
     pmid_file: UploadFile | None = File(default=None),
     start_year: int = Form(...),
     end_year: int = Form(...),
+    all_years: str | None = Form(default=None),
     peer_reviewed_only: str | None = Form(default=None),
     extra_excluded_types: str = Form(default=""),
 ) -> HTMLResponse:
+    all_years_enabled = all_years is not None
     peer_reviewed_only_enabled = peer_reviewed_only is not None
     excluded_type_terms = default_excluded_type_terms()
     excluded_type_terms.extend(parse_type_terms(extra_excluded_types))
     logger.info(
-        "Disambiguation request received: author=%r, start_year=%d, end_year=%d, peer_reviewed_only=%s",
+        "Disambiguation request received: author=%r, start_year=%s, end_year=%s, all_years=%s, peer_reviewed_only=%s",
         author_name,
         start_year,
         end_year,
+        all_years_enabled,
         peer_reviewed_only_enabled,
     )
     try:
@@ -769,7 +895,9 @@ def disambiguate(
                 "end_year": end_year,
                 "pmids": pmids,
                 "peer_reviewed_only": peer_reviewed_only_enabled,
+                "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
+                "year_options": _year_options(),
                 "error": str(exc),
             },
             status_code=400,
@@ -789,8 +917,28 @@ def disambiguate(
                 "end_year": end_year,
                 "pmids": pmids,
                 "peer_reviewed_only": peer_reviewed_only_enabled,
+                "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
+                "year_options": _year_options(),
                 "error": "No PMIDs found in text input or uploaded file",
+            },
+            status_code=400,
+        )
+
+    if not all_years_enabled and start_year > end_year:
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {
+                "author_name": author_name,
+                "start_year": start_year,
+                "end_year": end_year,
+                "pmids": pmids,
+                "peer_reviewed_only": peer_reviewed_only_enabled,
+                "all_years": all_years_enabled,
+                "extra_excluded_types": extra_excluded_types,
+                "year_options": _year_options(),
+                "error": "Start Year must be less than or equal to End Year",
             },
             status_code=400,
         )
@@ -807,12 +955,15 @@ def disambiguate(
     if cleaned_affiliations:
         logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
 
-    in_window_citations = [citation for citation in citations if citation_in_window(citation, start_year, end_year)]
+    window_start = None if all_years_enabled else start_year
+    window_end = None if all_years_enabled else end_year
+
+    in_window_citations = [citation for citation in citations if citation_in_window(citation, window_start, window_end)]
     in_window_pmids = {citation.pmid for citation in in_window_citations}
-    excluded_out_of_window = len(citations) - len(in_window_citations)
+    excluded_out_of_window = 0 if all_years_enabled else (len(citations) - len(in_window_citations))
     excluded_pmids: set[str] = {citation.pmid for citation in citations if citation.pmid not in in_window_pmids}
     excluded_reasons: dict[str, str] = {
-        citation.pmid: f"Outside year window {start_year}-{end_year}"
+        citation.pmid: f"Outside year window {_year_window_label(window_start, window_end)}"
         for citation in citations
         if citation.pmid not in in_window_pmids
     }
@@ -883,8 +1034,8 @@ def disambiguate(
         run_id,
         RunState(
             author_name=author_name,
-            start_year=start_year,
-            end_year=end_year,
+            start_year=window_start,
+            end_year=window_end,
             peer_reviewed_only=peer_reviewed_only_enabled,
             excluded_type_terms=excluded_type_terms,
             citations=citations,
@@ -901,8 +1052,9 @@ def disambiguate(
         {
             "run_id": run_id,
             "author_name": author_name,
-            "start_year": start_year,
-            "end_year": end_year,
+            "start_year": window_start,
+            "end_year": window_end,
+            "year_window_label": _year_window_label(window_start, window_end),
             "clusters": clusters,
             "cluster_citation_rows": cluster_citation_rows,
             "errors": errors,
@@ -945,6 +1097,7 @@ def citation_select(
                 "author_name": run.author_name,
                 "start_year": run.start_year,
                 "end_year": run.end_year,
+                "year_window_label": _year_window_label(run.start_year, run.end_year),
                 "clusters": run.clusters,
                 "cluster_citation_rows": cluster_citation_rows,
                 "errors": ["Select at least one author identity cluster."],
@@ -1020,6 +1173,7 @@ def citation_select(
             "author_name": run.author_name,
             "start_year": run.start_year,
             "end_year": run.end_year,
+            "year_window_label": _year_window_label(run.start_year, run.end_year),
             "selected_cluster_ids": sorted(selected),
             "selected_excluded_pmids": sorted(forced_excluded_pmids),
             "citation_selection_rows": [row for row in citation_selection_rows if bool(row["needs_review"])],
@@ -1171,7 +1325,8 @@ def report_correct(
     pmid_filter_enabled: int = Form(default=0),
     accepted_uncertain_pmids: list[str] = Form(default=[]),
     correction_entries: list[str] = Form(default=[]),
-) -> HTMLResponse:
+    download: str | None = Form(default=None),
+) -> Response:
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
     selected_pmid_set = set(selected_pmids)
@@ -1195,6 +1350,8 @@ def report_correct(
         accepted_uncertain_pmids=accepted_uncertain_set,
         correction_entries=correction_entries,
     )
+    if (download or "").strip().lower() == "xlsx":
+        return _xlsx_response_for_analysis(run=run, analysis=analysis)
 
     out_of_window_rows = _build_out_of_window_rows(
         citations=run.citations,
@@ -1215,71 +1372,4 @@ def report_correct(
         end_year=run.end_year,
         force_report=True,
         out_of_window_rows=out_of_window_rows,
-    )
-
-
-@app.post("/report-export.csv")
-def report_export_csv(
-    run_id: str = Form(...),
-    selected_cluster_ids: list[str] = Form(default=[]),
-    selected_pmids: list[str] = Form(default=[]),
-    selected_excluded_pmids: list[str] = Form(default=[]),
-    pmid_filter_enabled: int = Form(default=0),
-    accepted_uncertain_pmids: list[str] = Form(default=[]),
-    correction_entries: list[str] = Form(default=[]),
-) -> Response:
-    run = _load_run(run_id)
-    selected = set(selected_cluster_ids)
-    selected_pmid_set = set(selected_pmids)
-    forced_excluded_pmids = set(selected_excluded_pmids)
-    accepted_uncertain_set = set(accepted_uncertain_pmids)
-    logger.info(
-        "Report-export request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, corrections=%d",
-        run_id,
-        len(selected),
-        len(selected_pmid_set),
-        len(forced_excluded_pmids),
-        len(correction_entries),
-    )
-
-    analysis, _ = _rebuild_analysis_with_overrides(
-        run=run,
-        selected_cluster_ids=selected,
-        selected_pmids=selected_pmid_set,
-        selected_excluded_pmids=forced_excluded_pmids,
-        pmid_filter_enabled=pmid_filter_enabled,
-        accepted_uncertain_pmids=accepted_uncertain_set,
-        correction_entries=correction_entries,
-    )
-
-    row_data = _with_row_render_fields(analysis)
-    excluded_rows = [row for row in row_data if not row["include"]]
-    included_pubmed_rows = [row for row in row_data if row["include"] and row["role_source"] != "pmc"]
-    included_pmc_rows = [row for row in row_data if row["include"] and row["role_source"] == "pmc"]
-    report_rows = excluded_rows + included_pubmed_rows + included_pmc_rows
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["PMID/PMCID", "Title", "Journal", "Date", "Authors", "Publication Type", "Counted as"])
-    for row in report_rows:
-        pmid_pmcid = f"PMID {row['pmid']}"
-        if row["pmcid"]:
-            pmid_pmcid = f"{pmid_pmcid} | {row['pmcid']}"
-        writer.writerow(
-            [
-                pmid_pmcid,
-                row["title"],
-                row["journal"],
-                row["print_date"],
-                row["authors"],
-                row["publication_types"],
-                row["counted_as_report"],
-            ]
-        )
-
-    filename = f"pmcparser_{run.start_year}_{run.end_year}.csv"
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -1,6 +1,7 @@
 from app.logic import (
     analyze_citations,
     build_clusters,
+    citation_in_window,
     citation_matches_excluded_type,
     format_summary,
     match_author,
@@ -366,6 +367,20 @@ def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:
     assert "5 total, 4 1st/Sr author" in summary
     assert "2 JCI Insight 2022, 2025" in summary
     assert "2 Nat Immunol 2025, 2026" in summary
+
+
+def test_citation_in_window_all_years_includes_missing_year() -> None:
+    citation = _citation("w1", 2024, [])
+    citation.print_year = None
+    assert citation_in_window(citation, None, None) is True
+
+
+def test_format_summary_all_years_label() -> None:
+    rows = [
+        _row_summary("Nat Immunol", 2025, counted_overall=True, counted_first=False, counted_senior=False),
+    ]
+    summary = format_summary(rows, None, None)
+    assert "Peer-reviewed Publications (all years):" in summary
 
 
 def _row_summary(

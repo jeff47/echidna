@@ -26,11 +26,11 @@ def test_augment_params_adds_api_key_and_eutils_fields() -> None:
         url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
         params={"db": "pubmed"},
         api_key="abc123",
-        tool="pmcparser",
+        tool="ECHIDNA",
         email="ops@example.org",
     )
     assert params["api_key"] == "abc123"
-    assert params["tool"] == "pmcparser"
+    assert params["tool"] == "ECHIDNA"
     assert params["email"] == "ops@example.org"
 
 

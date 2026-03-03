@@ -1,4 +1,6 @@
-# pmcparser
+# ECHIDNA
+
+Extract Citations, Handle Institutional Data, and Normalize Authors.
 
 Precision-first webapp for publication counting from PMID lists with author disambiguation and optional manual review.
 
@@ -29,11 +31,12 @@ Open `http://127.0.0.1:8000`.
 
 ## Runtime Logging
 
-- Set `PMCPARSER_LOG_LEVEL` in the service environment to `DEBUG` when troubleshooting metadata extraction.
+- Set `ECHIDNA_LOG_LEVEL` in the service environment to `DEBUG` when troubleshooting metadata extraction.
 - Logs include PMID-level notes for PMCID mapping, PMC parsing, and affiliation backfill behavior.
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.
-- Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/pmcparser-runs` and can be overridden with `PMCPARSER_RUNS_DIR`.
+- Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/echidna-runs` and can be overridden with `ECHIDNA_RUNS_DIR`.
+- Backward compatibility is preserved for `PMCPARSER_LOG_LEVEL` and `PMCPARSER_RUNS_DIR`.
 
 ## Test
 

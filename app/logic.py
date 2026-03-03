@@ -283,7 +283,9 @@ def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
     return labels
 
 
-def citation_in_window(citation: Citation, start_year: int, end_year: int) -> bool:
+def citation_in_window(citation: Citation, start_year: int | None, end_year: int | None) -> bool:
+    if start_year is None or end_year is None:
+        return True
     if citation.print_year is None:
         return False
     return start_year <= citation.print_year <= end_year
@@ -299,8 +301,8 @@ def analyze_citations(
     citations: list[Citation],
     matches: list[AuthorMatch],
     selected_cluster_ids: set[str],
-    start_year: int,
-    end_year: int,
+    start_year: int | None,
+    end_year: int | None,
     forced_include_pmids: set[str] | None = None,
     excluded_pmids: set[str] | None = None,
 ) -> AnalysisResult:
@@ -361,6 +363,7 @@ def analyze_citations(
             uncertainty_reasons=reasons,
             include=not reasons,
             forced_include=force_included,
+            matched_positions=set(selected_positions),
         )
         rows.append(row)
         if reasons:
@@ -381,9 +384,10 @@ def analyze_citations(
 
 def format_summary(
     rows: list[ReportRow],
-    start_year: int,
-    end_year: int,
+    start_year: int | None,
+    end_year: int | None,
 ) -> str:
+    window_label = f"{start_year}-{end_year}" if start_year is not None and end_year is not None else "all years"
     included = [r for r in rows if r.include]
     overall_included = [r for r in included if r.counted_overall]
     total = len(overall_included)
@@ -391,9 +395,9 @@ def format_summary(
     review_senior_total = sum(1 for r in included if r.counted_review_senior)
     detail = _first_senior_detail(first_senior)
     return (
-        f"Peer-reviewed Publications ({start_year}-{end_year}): {total} total, "
+        f"Peer-reviewed Publications ({window_label}): {total} total, "
         f"{len(first_senior)} 1st/Sr author ({detail}). "
-        f"In addition: {review_senior_total} review(s) as Sr author"
+        f"In addition: {review_senior_total} review(s) as Sr author."
     )
 
 

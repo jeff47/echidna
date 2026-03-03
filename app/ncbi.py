@@ -85,7 +85,7 @@ class NcbiClient:
         self.timeout = timeout
         self.api_key = (api_key or os.getenv("NCBI_API_KEY", "")).strip() or None
         self.email = os.getenv("NCBI_EMAIL", "").strip() or None
-        self.tool = os.getenv("NCBI_TOOL", "pmcparser").strip() or "pmcparser"
+        self.tool = os.getenv("NCBI_TOOL", "ECHIDNA").strip() or "ECHIDNA"
         self.max_retries = max_retries
         self.min_interval_seconds = 0.11 if self.api_key else 0.34
         self._next_request_at = 0.0

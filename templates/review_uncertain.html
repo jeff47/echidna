@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Review Uncertain Citations</title>
+  <title>ECHIDNA - Review Uncertain Citations</title>
   <style>
     body { font-family: "Source Sans 3", "Segoe UI", sans-serif; margin: 0; background: #f4f5f7; color: #1f2933; }
     main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
@@ -59,7 +59,7 @@
               <td>{{ row.title }}</td>
               <td>{{ row.journal }}</td>
               <td>{{ row.print_date }}</td>
-              <td>{{ row.authors }}</td>
+              <td>{{ row.authors_html|safe }}</td>
               <td>{{ row.counted_as }}</td>
               <td>{{ row.role_source }}</td>
               <td>{{ row.notes }}</td>

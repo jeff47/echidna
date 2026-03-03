@@ -1,4 +1,13 @@
-sudo rsync -a --delete --exclude '.venv/' --exclude '.runtime/' /home/jeff/projects/personal/pmcparser/ /opt/pmcparser/
-sudo chown -R pmcparser:pmcparser /opt/pmcparser
-sudo -u pmcparser /opt/pmcparser/.venv/bin/python -m pip install --no-build-isolation -e /opt/pmcparser[dev]
-sudo systemctl restart pmcparser
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/echidna}"
+SERVICE_USER="${SERVICE_USER:-echidna}"
+SERVICE_GROUP="${SERVICE_GROUP:-${SERVICE_USER}}"
+SERVICE_NAME="${SERVICE_NAME:-echidna}"
+
+sudo rsync -a --delete --exclude '.venv/' --exclude '.runtime/' "${PROJECT_SRC_DIR}/" "${DEPLOY_DIR}/"
+sudo chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${DEPLOY_DIR}"
+sudo -u "${SERVICE_USER}" "${DEPLOY_DIR}/.venv/bin/python" -m pip install --no-build-isolation -e "${DEPLOY_DIR}[dev]"
+sudo systemctl restart "${SERVICE_NAME}"

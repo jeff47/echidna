@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Disambiguate Author</title>
+  <title>ECHIDNA - Confirm Author</title>
   <style>
     body { font-family: "Source Sans 3", "Segoe UI", sans-serif; margin: 0; background: #f4f5f7; color: #1f2933; }
     main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
@@ -26,9 +26,9 @@
 <main>
   <div class="card">
     <h1>Step 1: Confirm Author Identity</h1>
-    <p>Author: <strong>{{ author_name }}</strong> | Window: {{ start_year }}-{{ end_year }}</p>
+    <p>Author: <strong>{{ author_name }}</strong> | Window: {{ year_window_label }}</p>
     {% if excluded_out_of_window and excluded_out_of_window > 0 %}
-      <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window.</p>
+      <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window ({{ year_window_label }}).</p>
     {% endif %}
     {% if excluded_by_type and excluded_by_type > 0 %}
       <p class="muted">{{ excluded_by_type }} citation(s) were excluded by publication-type filter.</p>
