@@ -1,0 +1,27 @@
+services:
+  echidna:
+    build: .
+    container_name: echidna
+    restart: unless-stopped
+    env_file:
+      - .runtime/echidna.env
+    environment:
+      ECHIDNA_RUNS_DIR: /app/.runtime/runs
+    volumes:
+      - echidna_runtime:/app/.runtime
+    expose:
+      - "8001"
+    networks:
+      - docker_shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  echidna_runtime:
+
+networks:
+  docker_shared:
+    external: true

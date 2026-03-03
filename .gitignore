@@ -49,3 +49,4 @@ node_modules/
 *.secret
 *.password
 *.token
+.runtime/echidna.env
