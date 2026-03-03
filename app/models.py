@@ -11,6 +11,7 @@ class Author:
     fore_name: str
     initials: str
     affiliation: str
+    orcid: str = ""
 
 
 @dataclass(slots=True)
@@ -41,7 +42,7 @@ class TargetName:
 class AuthorMatch:
     pmid: str
     position: int
-    method: Literal["given", "initials"]
+    method: Literal["orcid", "given", "initials"]
     author: Author
     cluster_id: str
 

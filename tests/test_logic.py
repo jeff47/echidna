@@ -1,3 +1,5 @@
+import pytest
+
 from app.logic import (
     analyze_citations,
     build_clusters,
@@ -7,6 +9,7 @@ from app.logic import (
     match_author,
     parse_pmids,
     parse_target_name,
+    parse_target_orcid,
 )
 from app.models import Author, Citation
 
@@ -36,9 +39,50 @@ def _citation(
     )
 
 
-def _author(position: int, last: str, fore: str, initials: str, aff: str) -> Author:
-    return Author(position=position, last_name=last, fore_name=fore, initials=initials, affiliation=aff)
+def _author(position: int, last: str, fore: str, initials: str, aff: str, *, orcid: str = "") -> Author:
+    return Author(position=position, last_name=last, fore_name=fore, initials=initials, affiliation=aff, orcid=orcid)
 
+
+
+
+def test_parse_target_orcid_accepts_normalized_and_url_forms() -> None:
+    assert parse_target_orcid("0000-0002-1825-0097") == "0000-0002-1825-0097"
+    assert parse_target_orcid("https://orcid.org/0000-0002-1825-0097") == "0000-0002-1825-0097"
+    assert parse_target_orcid("0000000218250097") == "0000-0002-1825-0097"
+
+
+def test_parse_target_orcid_rejects_invalid_value() -> None:
+    with pytest.raises(ValueError):
+        parse_target_orcid("not-an-orcid")
+
+
+def test_match_author_orcid_is_definitive_when_available() -> None:
+    target = parse_target_name("Jeffrey Rice")
+    good = _author(1, "Rice", "James", "J", "Inst", orcid="0000-0002-1825-0097")
+    matched, method = match_author(good, target, target_orcid="0000-0002-1825-0097")
+    assert matched is True
+    assert method == "orcid"
+
+    bad = _author(1, "Rice", "Jeffrey", "J", "Inst", orcid="0000-0002-1825-0098")
+    matched, method = match_author(bad, target, target_orcid="0000-0002-1825-0097")
+    assert matched is False
+    assert method is None
+
+
+def test_build_clusters_prefers_orcid_matches_for_citation() -> None:
+    target = parse_target_name("Jane Doe")
+    citation = _citation(
+        "orcid-1",
+        2025,
+        [
+            _author(1, "Doe", "Jane", "J", "Inst A", orcid="0000-0002-1825-0097"),
+            _author(2, "Doe", "Jane", "J", "Inst B"),
+        ],
+    )
+    _, matches = build_clusters([citation], target, target_orcid="0000-0002-1825-0097")
+
+    assert len(matches) == 1
+    assert matches[0].method == "orcid"
 
 def test_parse_pmids_deduplicates_and_extracts_digits() -> None:
     raw = "PMID: 12345\n12345\nfoo 9999 bar\nnoid"

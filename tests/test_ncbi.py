@@ -44,6 +44,40 @@ def test_retry_delay_uses_backoff_when_header_missing() -> None:
     assert _retry_delay_seconds(response, attempt=2) == 2.4
 
 
+
+
+def test_parse_pubmed_author_orcid_from_identifier() -> None:
+    xml = """
+    <PubmedArticleSet>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>555</PMID>
+          <Article>
+            <ArticleTitle>ORCID test.</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>J Test</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue>
+            </Journal>
+            <AuthorList>
+              <Author>
+                <LastName>Doe</LastName>
+                <ForeName>Jane</ForeName>
+                <Initials>J</Initials>
+                <Identifier Source="ORCID">https://orcid.org/0000-0002-1825-0097</Identifier>
+              </Author>
+            </AuthorList>
+          </Article>
+        </MedlineCitation>
+      </PubmedArticle>
+    </PubmedArticleSet>
+    """
+    client = NcbiClient()
+    citations = client._parse_pubmed(xml)
+
+    assert len(citations) == 1
+    assert len(citations[0].authors) == 1
+    assert citations[0].authors[0].orcid == "0000-0002-1825-0097"
+
 def test_parse_pubmed_title_with_embedded_tags() -> None:
     xml = """
     <PubmedArticleSet>

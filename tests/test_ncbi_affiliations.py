@@ -7,6 +7,31 @@ def _author(position: int, last: str, fore: str, initials: str, affiliation: str
     return Author(position=position, last_name=last, fore_name=fore, initials=initials, affiliation=affiliation)
 
 
+
+
+def test_extract_pmc_enrichment_parses_author_orcid() -> None:
+    xml = """
+    <article>
+      <front>
+        <article-meta>
+          <contrib-group>
+            <contrib contrib-type="author">
+              <name><surname>Rice</surname><given-names>Jeffrey</given-names></name>
+              <contrib-id contrib-id-type="orcid">https://orcid.org/0000-0002-1825-0097</contrib-id>
+              <xref ref-type="aff" rid="a1" />
+            </contrib>
+          </contrib-group>
+          <aff id="a1">Department of Immunology, Institute A</aff>
+        </article-meta>
+      </front>
+    </article>
+    """
+    client = NcbiClient()
+    _, _, authors, _ = client._extract_pmc_enrichment(xml)
+
+    assert len(authors) == 1
+    assert authors[0].orcid == "0000-0002-1825-0097"
+
 def test_extract_pmc_enrichment_includes_roles_and_affiliations() -> None:
     xml = """
     <article>

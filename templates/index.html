@@ -13,6 +13,7 @@
       --accent: #0f766e;
       --border: #d9e2ec;
     }
+    * { box-sizing: border-box; }
     body { font-family: "Source Sans 3", "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: var(--text); }
     main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
@@ -26,6 +27,9 @@
     .author-label { font-size: 0.92rem; }
     .author-input { max-width: 22rem; font-size: 0.92rem; padding: 0.5rem; }
     .year-select { width: 10rem; max-width: 100%; }
+    .identity-row { display: grid; grid-template-columns: minmax(12rem, 15.5rem) minmax(12rem, 18rem); gap: 0.6rem; align-items: end; }
+    .identity-field { display: flex; flex-direction: column; min-width: 0; }
+    .identity-field .author-input { width: 100%; max-width: none; }
     .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
     .checkbox-row input[type="checkbox"] { width: auto; padding: 0; margin: 0; border: none; }
     .year-row { display: flex; align-items: flex-end; gap: 0.6rem; flex-wrap: wrap; }
@@ -39,6 +43,7 @@
     .error { color: #b42318; margin-top: 0.5rem; }
     @media (max-width: 700px) {
       .year-row { align-items: stretch; }
+      .identity-row { grid-template-columns: 1fr; align-items: stretch; }
       .author-input { max-width: 100%; }
     }
   </style>
@@ -55,8 +60,16 @@
     </div>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
     <form method="post" action="/disambiguate" enctype="multipart/form-data">
-      <label for="author_name" class="author-label">Author Name</label>
-      <input id="author_name" class="author-input" name="author_name" value="{{ author_name }}" required>
+      <div class="identity-row">
+        <div class="identity-field name">
+          <label for="author_name" class="author-label">Author Name</label>
+          <input id="author_name" class="author-input" name="author_name" value="{{ author_name }}" required>
+        </div>
+        <div class="identity-field orcid">
+          <label for="author_orcid" class="author-label">Author <a href="https://orcid.org/" target="_blank" rel="noopener">ORCiD</a> (optional)</label>
+          <input id="author_orcid" class="author-input" name="author_orcid" value="{{ author_orcid }}" placeholder="0000-0000-0000-0000">
+        </div>
+      </div>
 
       <div class="year-row">
         <div class="year-field">

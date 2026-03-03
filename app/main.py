@@ -27,6 +27,7 @@ from app.logic import (
     parse_type_terms,
     parse_pmids,
     parse_target_name,
+    parse_target_orcid,
 )
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
@@ -46,6 +47,7 @@ RUNS_DIR = Path(os.getenv("ECHIDNA_RUNS_DIR", os.getenv("PMCPARSER_RUNS_DIR", "/
 @dataclass(slots=True)
 class RunState:
     author_name: str
+    target_orcid: str
     start_year: int | None
     end_year: int | None
     peer_reviewed_only: bool
@@ -634,6 +636,7 @@ def _load_run_from_disk(run_id: str) -> RunState | None:
 def _serialize_run(run: RunState) -> dict[str, Any]:
     return {
         "author_name": run.author_name,
+        "target_orcid": run.target_orcid,
         "start_year": run.start_year,
         "end_year": run.end_year,
         "peer_reviewed_only": run.peer_reviewed_only,
@@ -651,6 +654,7 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
     end_raw = payload.get("end_year")
     return RunState(
         author_name=str(payload["author_name"]),
+        target_orcid=str(payload.get("target_orcid", "")),
         start_year=(int(start_raw) if start_raw is not None else None),
         end_year=(int(end_raw) if end_raw is not None else None),
         peer_reviewed_only=bool(payload.get("peer_reviewed_only", False)),
@@ -670,6 +674,7 @@ def _serialize_author(author: Any) -> dict[str, Any]:
         "fore_name": str(author.fore_name),
         "initials": str(author.initials),
         "affiliation": str(author.affiliation),
+        "orcid": str(getattr(author, "orcid", "")),
     }
 
 
@@ -682,6 +687,7 @@ def _deserialize_author(payload: dict[str, Any]) -> Any:
         fore_name=str(payload.get("fore_name", "")),
         initials=str(payload.get("initials", "")),
         affiliation=str(payload.get("affiliation", "")),
+        orcid=str(payload.get("orcid", "")),
     )
 
 
@@ -849,6 +855,7 @@ def index(request: Request) -> HTMLResponse:
         "index.html",
         {
             "author_name": "",
+            "author_orcid": "",
             "start_year": year - 5,
             "end_year": year,
             "pmids": "",
@@ -872,6 +879,7 @@ def landing_image() -> FileResponse:
 def disambiguate(
     request: Request,
     author_name: str = Form(...),
+    author_orcid: str = Form(default=""),
     pmids: str = Form(default=""),
     pmid_file: UploadFile | None = File(default=None),
     start_year: int = Form(...),
@@ -885,8 +893,9 @@ def disambiguate(
     excluded_type_terms = default_excluded_type_terms()
     excluded_type_terms.extend(parse_type_terms(extra_excluded_types))
     logger.info(
-        "Disambiguation request received: author=%r, start_year=%s, end_year=%s, all_years=%s, peer_reviewed_only=%s",
+        "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, peer_reviewed_only=%s",
         author_name,
+        author_orcid,
         start_year,
         end_year,
         all_years_enabled,
@@ -894,12 +903,14 @@ def disambiguate(
     )
     try:
         target = parse_target_name(author_name)
+        target_orcid = parse_target_orcid(author_orcid)
     except ValueError as exc:
         return templates.TemplateResponse(
             request,
             "index.html",
             {
                 "author_name": author_name,
+                "author_orcid": author_orcid,
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
@@ -922,6 +933,7 @@ def disambiguate(
             "index.html",
             {
                 "author_name": author_name,
+                "author_orcid": author_orcid,
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
@@ -940,6 +952,7 @@ def disambiguate(
             "index.html",
             {
                 "author_name": author_name,
+                "author_orcid": author_orcid,
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
@@ -997,8 +1010,8 @@ def disambiguate(
         excluded_by_type,
     )
 
-    clusters, eligible_matches = build_clusters(disambiguation_citations, target)
-    _, all_matches = build_clusters(citations, target)
+    clusters, eligible_matches = build_clusters(disambiguation_citations, target, target_orcid=target_orcid)
+    _, all_matches = build_clusters(citations, target, target_orcid=target_orcid)
     citation_by_pmid = {citation.pmid: citation for citation in disambiguation_citations}
     cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
     cluster_citation_rows = _build_cluster_citation_rows(citations=disambiguation_citations, matches=eligible_matches)
@@ -1043,6 +1056,7 @@ def disambiguate(
         run_id,
         RunState(
             author_name=author_name,
+            target_orcid=target_orcid,
             start_year=window_start,
             end_year=window_end,
             peer_reviewed_only=peer_reviewed_only_enabled,
@@ -1061,6 +1075,7 @@ def disambiguate(
         {
             "run_id": run_id,
             "author_name": author_name,
+            "target_orcid": target_orcid,
             "start_year": window_start,
             "end_year": window_end,
             "year_window_label": _year_window_label(window_start, window_end),
@@ -1104,6 +1119,7 @@ def citation_select(
             {
                 "run_id": run_id,
                 "author_name": run.author_name,
+                "target_orcid": run.target_orcid,
                 "start_year": run.start_year,
                 "end_year": run.end_year,
                 "year_window_label": _year_window_label(run.start_year, run.end_year),

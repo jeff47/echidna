@@ -9,6 +9,8 @@ from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, Target
 
 NON_ALPHA_NUM = re.compile(r"[^a-z0-9]+")
 FOUR_DIGIT_YEAR = re.compile(r"(19|20)\d{2}")
+ORCID_CANONICAL = re.compile(r"(\d{4})-?(\d{4})-?(\d{4})-?(\d{3}[\dXx])")
+ORCID_COMPACT = re.compile(r"^\d{15}[\dXx]$")
 EXCLUDED_TYPE_KEYWORDS = (
     "preprint",
     "editorial",
@@ -89,6 +91,35 @@ def parse_target_name(raw_name: str) -> TargetName:
     return TargetName(raw=raw_name.strip(), surname=surname, given=given, initials=initials)
 
 
+def normalize_orcid(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    for prefix in ("https://orcid.org/", "http://orcid.org/", "orcid.org/"):
+        if lowered.startswith(prefix):
+            raw = raw[len(prefix):].strip()
+            break
+
+    canonical = ORCID_CANONICAL.search(raw)
+    if canonical is not None:
+        return f"{canonical.group(1)}-{canonical.group(2)}-{canonical.group(3)}-{canonical.group(4).upper()}"
+
+    compact = re.sub(r"[^0-9Xx]", "", raw)
+    if ORCID_COMPACT.fullmatch(compact):
+        compact = compact.upper()
+        return f"{compact[0:4]}-{compact[4:8]}-{compact[8:12]}-{compact[12:16]}"
+
+    return ""
+
+
+def parse_target_orcid(raw_orcid: str) -> str:
+    normalized = normalize_orcid(raw_orcid)
+    if raw_orcid.strip() and not normalized:
+        raise ValueError("ORCID must be in the form 0000-0000-0000-0000 (or an ORCID URL)")
+    return normalized
+
+
 def parse_year(pub_date: str) -> int | None:
     match = FOUR_DIGIT_YEAR.search(pub_date)
     if not match:
@@ -141,7 +172,14 @@ def is_review_article(citation: Citation) -> bool:
     return False
 
 
-def match_author(author: Author, target: TargetName) -> tuple[bool, str | None]:
+def match_author(author: Author, target: TargetName, target_orcid: str = "") -> tuple[bool, str | None]:
+    if target_orcid:
+        author_orcid = normalize_orcid(author.orcid)
+        if author_orcid:
+            if author_orcid == target_orcid:
+                return True, "orcid"
+            return False, None
+
     if normalize_token(author.last_name) != target.surname:
         return False, None
 
@@ -218,29 +256,49 @@ def _clean_clause_label(clause: str) -> str:
     return TRAILING_PUNCT.sub("", " ".join(clause.split()))
 
 
-def build_clusters(citations: list[Citation], target: TargetName) -> tuple[list[Cluster], list[AuthorMatch]]:
+def build_clusters(
+    citations: list[Citation],
+    target: TargetName,
+    target_orcid: str = "",
+) -> tuple[list[Cluster], list[AuthorMatch]]:
     cluster_mentions: dict[str, list[AuthorMatch]] = defaultdict(list)
     matches: list[AuthorMatch] = []
 
     for citation in citations:
+        citation_matches: list[AuthorMatch] = []
         for author in citation.authors:
-            matched, method = match_author(author, target)
+            matched, method = match_author(author, target, target_orcid=target_orcid)
             if not matched or method is None:
                 continue
-            aff_key = affiliation_fingerprint(author.affiliation)
-            cluster_id = f"{normalize_token(author.last_name)}|{extract_initials(author.fore_name)}|{aff_key}"
-            if aff_key == "no-affiliation":
-                # Keep no-affiliation candidates independent so users can include/exclude per citation.
-                cluster_id = f"{cluster_id}|pmid:{citation.pmid}"
-            match = AuthorMatch(
-                pmid=citation.pmid,
-                position=author.position,
-                method=method,
-                author=author,
-                cluster_id=cluster_id,
+
+            author_orcid = normalize_orcid(author.orcid)
+            if method == "orcid" and author_orcid:
+                cluster_id = f"orcid:{author_orcid}"
+            else:
+                aff_key = affiliation_fingerprint(author.affiliation)
+                cluster_id = f"{normalize_token(author.last_name)}|{extract_initials(author.fore_name)}|{aff_key}"
+                if aff_key == "no-affiliation":
+                    # Keep no-affiliation candidates independent so users can include/exclude per citation.
+                    cluster_id = f"{cluster_id}|pmid:{citation.pmid}"
+
+            citation_matches.append(
+                AuthorMatch(
+                    pmid=citation.pmid,
+                    position=author.position,
+                    method=method,
+                    author=author,
+                    cluster_id=cluster_id,
+                )
             )
+
+        if target_orcid:
+            orcid_matches = [match for match in citation_matches if match.method == "orcid"]
+            if orcid_matches:
+                citation_matches = orcid_matches
+
+        for match in citation_matches:
             matches.append(match)
-            cluster_mentions[cluster_id].append(match)
+            cluster_mentions[match.cluster_id].append(match)
 
     clusters: list[Cluster] = []
     for cluster_id, cluster_matches in cluster_mentions.items():
@@ -334,10 +392,12 @@ def analyze_citations(
 
         reasons: list[str] = []
 
-        if len(matched_mentions) > 1:
+        has_definitive_orcid = any(m.method == "orcid" for m in selected_mentions)
+
+        if len(matched_mentions) > 1 and not has_definitive_orcid:
             reasons.append("multiple matching authors with same/similar name")
 
-        if any(m.method == "initials" for m in selected_mentions):
+        if any(m.method == "initials" for m in selected_mentions) and not has_definitive_orcid:
             reasons.append("matched by initials fallback")
 
         if citation.source_for_roles == "pubmed":

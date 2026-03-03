@@ -26,7 +26,7 @@
 <main>
   <div class="card">
     <h1>Step 1: Confirm Author Identity</h1>
-    <p>Author: <strong>{{ author_name }}</strong> | Window: {{ year_window_label }}</p>
+    <p>Author: <strong>{{ author_name }}</strong>{% if target_orcid %} | ORCID: <strong>{{ target_orcid }}</strong>{% endif %} | Window: {{ year_window_label }}</p>
     {% if excluded_out_of_window and excluded_out_of_window > 0 %}
       <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window ({{ year_window_label }}).</p>
     {% endif %}

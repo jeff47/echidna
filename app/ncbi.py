@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
-from app.logic import parse_year
+from app.logic import normalize_orcid, parse_year
 from app.models import Author, Citation
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -323,6 +323,7 @@ class NcbiClient:
                     fore_name=fore_name,
                     initials=_initials_from_name(fore_name),
                     affiliation=affiliation,
+                    orcid=_extract_pmc_contrib_orcid(contrib),
                 )
             )
 
@@ -429,6 +430,7 @@ def _find_authors(article: ET.Element) -> list[Author]:
                 fore_name=fore_name,
                 initials=initials,
                 affiliation=affiliation,
+                orcid=_extract_pubmed_author_orcid(author),
             )
         )
     # Legacy PubMed records may expose one shared affiliation either at article-level or
@@ -452,6 +454,25 @@ def _find_authors(article: ET.Element) -> list[Author]:
                 author.affiliation = only_affiliation
     return authors
 
+
+
+
+def _extract_pubmed_author_orcid(author: ET.Element) -> str:
+    identifier_nodes = list(author.findall("Identifier")) + list(author.findall("AuthorIdentifier"))
+    for node in identifier_nodes:
+        source = (node.attrib.get("Source") or node.attrib.get("source") or "").strip().lower()
+        text = normalize_orcid("".join(node.itertext()))
+        if not text:
+            continue
+        if source in {"", "orcid"}:
+            return text
+
+    for node in identifier_nodes:
+        text = normalize_orcid("".join(node.itertext()))
+        if text:
+            return text
+
+    return ""
 
 def _find_publication_types(article: ET.Element) -> list[str]:
     values: list[str] = []
@@ -537,6 +558,30 @@ def _is_suffix_positions(positions: list[int], author_count: int) -> bool:
         return False
     return positions == list(range(positions[0], author_count + 1))
 
+
+
+
+def _extract_pmc_contrib_orcid(contrib: ET.Element) -> str:
+    for node in contrib.findall(".//contrib-id"):
+        contrib_type = (node.attrib.get("contrib-id-type") or "").strip().lower()
+        if contrib_type != "orcid":
+            continue
+        value = normalize_orcid("".join(node.itertext()))
+        if value:
+            return value
+        for attr_name, attr_value in node.attrib.items():
+            if attr_name.lower().endswith("href"):
+                value = normalize_orcid(attr_value)
+                if value:
+                    return value
+
+    for attr_name, attr_value in contrib.attrib.items():
+        if attr_name.lower().endswith("href"):
+            value = normalize_orcid(attr_value)
+            if value:
+                return value
+
+    return ""
 
 def _extract_contrib_affiliation(
     contrib: ET.Element,
