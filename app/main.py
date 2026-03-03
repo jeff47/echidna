@@ -244,12 +244,21 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         return
 
 
+def _orcid_identifier_crosscheck_available(*, target_orcid: str, orcid_sync_error: str | None) -> bool:
+    if not target_orcid:
+        return False
+    if not orcid_sync_error:
+        return True
+    return "identifier cross-check unavailable" not in orcid_sync_error.lower()
+
+
 def _with_row_render_fields(
     analysis: AnalysisResult,
     *,
     orcid_identifier_matches: dict[str, list[str]] | None = None,
     orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
+    orcid_identifier_checked: bool = False,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for idx, row in enumerate(analysis.rows):
@@ -258,6 +267,25 @@ def _with_row_render_fields(
         notes = list(row.citation.notes) + list(row.uncertainty_reasons)
         if row.forced_include:
             notes.append("Forced include override from Step 1")
+
+        orcid_fields = _orcid_row_fields(
+            pmid=row.citation.pmid,
+            target_orcid=target_orcid,
+            orcid_identifier_matches=orcid_identifier_matches,
+            orcid_affiliation_matches=orcid_affiliation_matches,
+        )
+        if target_orcid and orcid_identifier_checked and not bool(orcid_fields.get("orcid_verified", False)):
+            notes.append("No match from ORCiD")
+
+        deduped_notes: list[str] = []
+        seen_notes: set[str] = set()
+        for note in notes:
+            cleaned = str(note).strip()
+            if not cleaned or cleaned in seen_notes:
+                continue
+            seen_notes.add(cleaned)
+            deduped_notes.append(cleaned)
+
         rows.append(
             {
                 "idx": idx,
@@ -267,12 +295,7 @@ def _with_row_render_fields(
                 "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{row.citation.pmid}/",
                 "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{row.citation.pmcid}/" if row.citation.pmcid else None,
                 "doi_link": f"https://doi.org/{row.citation.doi}" if row.citation.doi else None,
-                **_orcid_row_fields(
-                    pmid=row.citation.pmid,
-                    target_orcid=target_orcid,
-                    orcid_identifier_matches=orcid_identifier_matches,
-                    orcid_affiliation_matches=orcid_affiliation_matches,
-                ),
+                **orcid_fields,
                 "title": row.citation.title,
                 "journal": row.citation.journal,
                 "print_date": row.citation.print_date,
@@ -283,7 +306,7 @@ def _with_row_render_fields(
                 "counted_as_report": counted_as_report,
                 "correction_default": _default_correction_mode(row),
                 "role_source": row.citation.source_for_roles,
-                "notes": "; ".join(notes),
+                "notes": "; ".join(deduped_notes),
                 "include": row.include,
                 "status_label": (
                     "included (review separate)"
@@ -361,6 +384,10 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
         orcid_identifier_matches=run.orcid_identifier_matches,
         orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
+        orcid_identifier_checked=_orcid_identifier_crosscheck_available(
+            target_orcid=run.target_orcid,
+            orcid_sync_error=run.orcid_sync_error,
+        ),
     )
     excluded_rows = [row for row in row_data if not row["include"]]
     included_pubmed_rows = [row for row in row_data if row["include"] and row["role_source"] != "pmc"]
@@ -1050,6 +1077,10 @@ def _render_analysis_result(
             orcid_identifier_matches=run.orcid_identifier_matches,
             orcid_affiliation_matches=run.orcid_affiliation_matches,
             target_orcid=run.target_orcid,
+            orcid_identifier_checked=_orcid_identifier_crosscheck_available(
+                target_orcid=run.target_orcid,
+                orcid_sync_error=run.orcid_sync_error,
+            ),
         )
         uncertain_rows = [row_data[i] for i in analysis.uncertain_indices]
         return templates.TemplateResponse(
@@ -1071,6 +1102,10 @@ def _render_analysis_result(
         orcid_identifier_matches=run.orcid_identifier_matches,
         orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
+        orcid_identifier_checked=_orcid_identifier_crosscheck_available(
+            target_orcid=run.target_orcid,
+            orcid_sync_error=run.orcid_sync_error,
+        ),
     )
     accepted_uncertain_pmids = sorted(
         {

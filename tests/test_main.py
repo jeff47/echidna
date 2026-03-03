@@ -2,8 +2,9 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from app.main import _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields
-from app.models import Author, AuthorMatch, Citation
+from app.logic import AnalysisResult
+from app.main import _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields, _with_row_render_fields
+from app.models import Author, AuthorMatch, Citation, ReportRow
 
 
 def _citation(pmid: str, *, year: int = 2024) -> Citation:
@@ -160,3 +161,71 @@ def test_orcid_row_fields_hides_citation_badge_for_affiliation_only_match() -> N
     assert fields["orcid_badge_show"] is False
     assert fields["orcid_affiliation_verified"] is True
     assert fields["orcid_affiliation_level"] == "contains"
+
+
+def test_with_row_render_fields_adds_note_when_missing_from_orcid_works_list() -> None:
+    citation = _citation("200")
+    analysis = AnalysisResult(
+        rows=[
+            ReportRow(
+                citation=citation,
+                counted_overall=True,
+                counted_first=False,
+                counted_senior=False,
+                counted_review_senior=False,
+                is_review=False,
+                uncertainty_reasons=[],
+                include=True,
+                forced_include=False,
+                matched_positions={1},
+            )
+        ],
+        uncertain_indices=[],
+    )
+
+    rows = _with_row_render_fields(
+        analysis,
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={
+            "200": {
+                "level": "likely",
+                "label": "institution match (Inst A)",
+                "institution": "Inst A",
+            }
+        },
+        target_orcid="0000-0001-2345-6789",
+        orcid_identifier_checked=True,
+    )
+
+    assert "No match from ORCiD" in str(rows[0]["notes"])
+
+
+def test_with_row_render_fields_skips_missing_orcid_note_when_identifier_check_unavailable() -> None:
+    citation = _citation("201")
+    analysis = AnalysisResult(
+        rows=[
+            ReportRow(
+                citation=citation,
+                counted_overall=True,
+                counted_first=False,
+                counted_senior=False,
+                counted_review_senior=False,
+                is_review=False,
+                uncertainty_reasons=[],
+                include=True,
+                forced_include=False,
+                matched_positions={1},
+            )
+        ],
+        uncertain_indices=[],
+    )
+
+    rows = _with_row_render_fields(
+        analysis,
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={},
+        target_orcid="0000-0001-2345-6789",
+        orcid_identifier_checked=False,
+    )
+
+    assert "No match from ORCiD" not in str(rows[0]["notes"])

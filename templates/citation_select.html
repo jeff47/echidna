@@ -19,12 +19,96 @@
     .orcid-badge-weak { background: #fef3c7; color: #92400e; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .toolbar { margin-top: 0.75rem; display: flex; gap: 1rem; align-items: center; }
+
+    .header-row { display: flex; align-items: center; gap: 0.5rem; }
+    .header-row h1 { margin: 0; }
+    .help-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border: 1px solid #93c5fd;
+      text-decoration: none;
+      font-weight: 700;
+      line-height: 1;
+      font-size: 0.95rem;
+    }
+    .help-overlay[hidden] { display: none; }
+    .help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 1000;
+    }
+    .help-dialog {
+      width: min(640px, 100%);
+      max-height: 85vh;
+      overflow: auto;
+      background: #ffffff;
+      border: 1px solid #d9e2ec;
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .help-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .help-dialog h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+    .help-dialog p,
+    .help-dialog li {
+      color: #334155;
+      font-size: 0.95rem;
+    }
+    .help-dialog ul {
+      margin: 0.5rem 0 0;
+      padding-left: 1.2rem;
+    }
+    .help-close {
+      margin-top: 0;
+      background: #f8fafc;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 0.25rem 0.5rem;
+      line-height: 1;
+      font-size: 1.05rem;
+      cursor: pointer;
+    }
+    .help-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.9rem;
+    }
+    .help-actions button {
+      margin-top: 0;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0.45rem 0.8rem;
+      cursor: pointer;
+    }
+
   </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <h1>Step 2: Citation Selection</h1>
+    <div class="header-row"><h1>Step 2: Citation Selection</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
     <p>Author: <strong>{{ author_name }}</strong>{% if target_orcid %} | ORCID: <strong>{{ target_orcid }}</strong>{% endif %} | Window: {{ year_window_label }}</p>
     <p class="muted">Only citations requiring manual review are shown below.</p>
     {% if auto_included_pmids %}
@@ -96,9 +180,73 @@
 
       <button type="submit">Analyze Publications</button>
     </form>
+
+    <div id="help-overlay" class="help-overlay" hidden>
+      <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <div class="help-dialog-header">
+          <h2 id="help-title">Help: Step 2 Citation Selection</h2>
+          <button type="button" id="help-close" class="help-close" aria-label="Close help">&times;</button>
+        </div>
+        <p>This page shows citations that require manual review before analysis.</p>
+        <ul>
+          <li>Keep checked the citations you want included.</li>
+          <li>Use <strong>Include all visible citations</strong> to toggle all rows quickly.</li>
+          <li>Review the <strong>Reason for Review</strong> column to understand uncertainty flags.</li>
+          <li>Select <strong>Analyze Publications</strong> to run counting and generate the report.</li>
+        </ul>
+        <div class="help-actions">
+          <button type="button" id="help-dismiss">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 </main>
 <script>
+
+  const helpLink = document.getElementById("help-link");
+  const helpOverlay = document.getElementById("help-overlay");
+  const helpClose = document.getElementById("help-close");
+  const helpDismiss = document.getElementById("help-dismiss");
+
+  function openHelp(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (!helpOverlay) {
+      return;
+    }
+    helpOverlay.hidden = false;
+  }
+
+  function closeHelp() {
+    if (!helpOverlay) {
+      return;
+    }
+    helpOverlay.hidden = true;
+  }
+
+  if (helpLink) {
+    helpLink.addEventListener("click", openHelp);
+  }
+  if (helpClose) {
+    helpClose.addEventListener("click", closeHelp);
+  }
+  if (helpDismiss) {
+    helpDismiss.addEventListener("click", closeHelp);
+  }
+  if (helpOverlay) {
+    helpOverlay.addEventListener("click", (event) => {
+      if (event.target === helpOverlay) {
+        closeHelp();
+      }
+    });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeHelp();
+    }
+  });
+
   const includeAllToggle = document.getElementById("include-all-toggle");
   const rowCheckboxes = Array.from(document.querySelectorAll('input[name="selected_pmids"]')).filter(
     (input) => input.type === "checkbox",
