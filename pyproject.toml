@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<9",
+  "mypy>=1.19,<2",
+  "types-openpyxl>=3.1,<4",
 ]
 
 [tool.pytest.ini_options]
@@ -32,11 +34,3 @@ packages = ["app"]
 [tool.mypy]
 python_version = "3.12"
 
-[[tool.mypy.overrides]]
-module = [
-  "fastapi",
-  "fastapi.*",
-  "openpyxl",
-  "openpyxl.*",
-]
-ignore_missing_imports = true

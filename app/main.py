@@ -276,6 +276,8 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
 
     workbook = Workbook()
     sheet = workbook.active
+    if sheet is None:
+        raise HTTPException(status_code=500, detail="Failed to initialize worksheet for Excel export")
     sheet.title = "Publications"
     sheet.append(
         [
