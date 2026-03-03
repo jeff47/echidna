@@ -117,7 +117,12 @@
       <p class="muted">{{ excluded_out_of_window }} citation(s) were excluded before disambiguation because they are outside the year window ({{ year_window_label }}).</p>
     {% endif %}
     {% if excluded_by_type and excluded_by_type > 0 %}
-      <p class="muted">{{ excluded_by_type }} citation(s) were excluded by publication-type filter.</p>
+      <p class="muted">
+        {{ excluded_by_type }} citation(s) were excluded by publication-type filter.
+        {% if excluded_citation_rows %}
+          <a href="#excluded-citations">View excluded citations</a>.
+        {% endif %}
+      </p>
     {% endif %}
 
     {% if errors %}
@@ -173,7 +178,7 @@
           </div>
         {% endfor %}
         {% if excluded_citation_rows %}
-          <h2>Excluded Citations (Optional Override)</h2>
+          <h2 id="excluded-citations">Excluded Citations (Optional Override)</h2>
           <p class="muted">These matched citations were excluded before disambiguation (year/type filters). Check any citation below to force include it in downstream analysis.</p>
           <table class="subtable">
             <thead>
