@@ -28,6 +28,7 @@ from app.logic import (
     parse_pmids,
     parse_target_name,
     parse_target_orcid,
+    _institution_key,
 )
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
@@ -60,6 +61,7 @@ class RunState:
     excluded_pmids: set[str]
     excluded_reasons: dict[str, str]
     orcid_identifier_matches: dict[str, list[str]]
+    orcid_affiliation_matches: dict[str, dict[str, str]]
     orcid_sync_error: str | None
 
 
@@ -68,6 +70,7 @@ RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 YEAR_OPTION_MIN = 1950
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LANDING_IMAGE_PATH = PROJECT_ROOT / "echidna.jpg"
+ORCID_AFFILIATION_LEVEL_RANK = {"verified": 4, "likely": 3, "contains": 2, "possible": 1}
 
 
 def _to_author_list(citation: Citation) -> str:
@@ -103,6 +106,73 @@ def _dict_row_sort_key(row: dict[str, object]) -> tuple[bool, int, str]:
     pmid = str(row.get("pmid", ""))
     return (year is None, -(year or 0), pmid)
 
+def _orcid_affiliation_level_rank(level: str) -> int:
+    return ORCID_AFFILIATION_LEVEL_RANK.get(level.strip().lower(), 0)
+
+
+def _orcid_badge_class(*, has_identifier_match: bool, affiliation_level: str) -> str:
+    if has_identifier_match:
+        return "orcid-badge"
+    if affiliation_level.strip().lower() == "contains":
+        return "orcid-badge orcid-badge-weak"
+    return "orcid-badge"
+
+
+def _orcid_badge_title(
+    *,
+    has_identifier_match: bool,
+    identifier_label: str,
+    affiliation_level: str,
+    affiliation_label: str,
+) -> str:
+    if has_identifier_match:
+        return f"ORCiD matched by {identifier_label}" if identifier_label else "ORCiD identifier match"
+    if affiliation_level and affiliation_label:
+        return f"ORCiD affiliation {affiliation_level}: {affiliation_label}"
+    if affiliation_level:
+        return f"ORCiD affiliation {affiliation_level} match"
+    return "ORCiD match"
+
+
+def _orcid_row_fields(
+    *,
+    pmid: str,
+    target_orcid: str,
+    orcid_identifier_matches: dict[str, list[str]] | None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None,
+) -> dict[str, object]:
+    identifier_matches = (orcid_identifier_matches or {}).get(pmid, [])
+    affiliation_match = (orcid_affiliation_matches or {}).get(pmid, {})
+    affiliation_level = str(affiliation_match.get("level", "")).strip().lower()
+    affiliation_label = str(affiliation_match.get("label", "")).strip()
+    affiliation_institution = str(affiliation_match.get("institution", "")).strip()
+
+    has_identifier_match = bool(identifier_matches)
+    has_affiliation_match = bool(affiliation_level and affiliation_label)
+    identifier_label = "/".join(value.upper() for value in identifier_matches)
+
+    return {
+        "orcid_verified": has_identifier_match,
+        "orcid_match_types": list(identifier_matches),
+        "orcid_match_label": identifier_label,
+        "orcid_affiliation_verified": has_affiliation_match,
+        "orcid_affiliation_level": affiliation_level,
+        "orcid_affiliation_label": affiliation_label,
+        "orcid_affiliation_institution": affiliation_institution,
+        # Citation-level iD badge only appears for ORCiD work identifier matches.
+        "orcid_badge_show": has_identifier_match,
+        "orcid_badge_class": _orcid_badge_class(
+            has_identifier_match=has_identifier_match,
+            affiliation_level="",
+        ),
+        "orcid_badge_title": _orcid_badge_title(
+            has_identifier_match=has_identifier_match,
+            identifier_label=identifier_label,
+            affiliation_level=affiliation_level,
+            affiliation_label=affiliation_label,
+        ),
+        "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and has_identifier_match) else None,
+    }
 
 def _default_correction_mode(row: Any) -> str:
     if not row.include:
@@ -178,18 +248,16 @@ def _with_row_render_fields(
     analysis: AnalysisResult,
     *,
     orcid_identifier_matches: dict[str, list[str]] | None = None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    if orcid_identifier_matches is None:
-        orcid_identifier_matches = {}
     for idx, row in enumerate(analysis.rows):
         counted_as = _counted_as_category(row)
         counted_as_report = counted_as
         notes = list(row.citation.notes) + list(row.uncertainty_reasons)
         if row.forced_include:
             notes.append("Forced include override from Step 1")
-        orcid_match_types = orcid_identifier_matches.get(row.citation.pmid, [])
         rows.append(
             {
                 "idx": idx,
@@ -199,10 +267,12 @@ def _with_row_render_fields(
                 "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{row.citation.pmid}/",
                 "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{row.citation.pmcid}/" if row.citation.pmcid else None,
                 "doi_link": f"https://doi.org/{row.citation.doi}" if row.citation.doi else None,
-                "orcid_verified": bool(orcid_match_types),
-                "orcid_match_types": list(orcid_match_types),
-                "orcid_match_label": "/".join(value.upper() for value in orcid_match_types),
-                "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and orcid_match_types) else None,
+                **_orcid_row_fields(
+                    pmid=row.citation.pmid,
+                    target_orcid=target_orcid,
+                    orcid_identifier_matches=orcid_identifier_matches,
+                    orcid_affiliation_matches=orcid_affiliation_matches,
+                ),
                 "title": row.citation.title,
                 "journal": row.citation.journal,
                 "print_date": row.citation.print_date,
@@ -289,6 +359,7 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
     row_data = _with_row_render_fields(
         analysis,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     excluded_rows = [row for row in row_data if not row["include"]]
@@ -407,12 +478,11 @@ def _build_citation_selection_rows(
     start_year: int | None,
     end_year: int | None,
     orcid_identifier_matches: dict[str, list[str]] | None = None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
 ) -> list[dict[str, object]]:
     if all_matches is None:
         all_matches = matches
-    if orcid_identifier_matches is None:
-        orcid_identifier_matches = {}
 
     citation_by_pmid = {citation.pmid: citation for citation in citations}
     all_positions_by_pmid: dict[str, set[int]] = {}
@@ -472,7 +542,6 @@ def _build_citation_selection_rows(
             review_reasons.append("Multiple matched author positions in citation")
         if has_initials_match:
             review_reasons.append("Matched by initials fallback")
-        orcid_match_types = orcid_identifier_matches.get(pmid, [])
         rendered.append(
             {
                 "pmid": row["pmid"],
@@ -491,10 +560,12 @@ def _build_citation_selection_rows(
                 "needs_review": bool(review_reasons),
                 "review_reason": "; ".join(review_reasons),
                 "in_window": bool(citation_in_window(citation_by_pmid[pmid], start_year, end_year)),
-                "orcid_verified": bool(orcid_match_types),
-                "orcid_match_types": list(orcid_match_types),
-                "orcid_match_label": "/".join(value.upper() for value in orcid_match_types),
-                "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and orcid_match_types) else None,
+                **_orcid_row_fields(
+                    pmid=pmid,
+                    target_orcid=target_orcid,
+                    orcid_identifier_matches=orcid_identifier_matches,
+                    orcid_affiliation_matches=orcid_affiliation_matches,
+                ),
             }
         )
 
@@ -507,11 +578,10 @@ def _build_cluster_citation_rows(
     citations: list[Citation],
     matches: list[AuthorMatch],
     orcid_identifier_matches: dict[str, list[str]] | None = None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
 ) -> dict[str, list[dict[str, object]]]:
     citation_by_pmid = {citation.pmid: citation for citation in citations}
-    if orcid_identifier_matches is None:
-        orcid_identifier_matches = {}
     by_cluster: dict[str, dict[str, dict[str, object]]] = {}
 
     for match in matches:
@@ -527,10 +597,12 @@ def _build_cluster_citation_rows(
                 "year": citation.print_year,
                 "journal": citation.journal,
                 "title": citation.title,
-                "orcid_match_types": list(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_verified": bool(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_match_label": "/".join(value.upper() for value in orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and orcid_identifier_matches.get(citation.pmid, [])) else None,
+                **_orcid_row_fields(
+                    pmid=citation.pmid,
+                    target_orcid=target_orcid,
+                    orcid_identifier_matches=orcid_identifier_matches,
+                    orcid_affiliation_matches=orcid_affiliation_matches,
+                ),
             },
         )
 
@@ -541,6 +613,84 @@ def _build_cluster_citation_rows(
         rendered[cluster_id] = rows
     return rendered
 
+
+def _build_cluster_orcid_affiliation_matches(
+    cluster_citation_rows: dict[str, list[dict[str, object]]],
+) -> dict[str, list[dict[str, str]]]:
+    by_cluster: dict[str, list[dict[str, str]]] = {}
+    for cluster_id, rows in cluster_citation_rows.items():
+        by_key: dict[str, dict[str, str]] = {}
+        for row in rows:
+            if not bool(row.get("orcid_affiliation_verified", False)):
+                continue
+            institution = str(row.get("orcid_affiliation_institution", "")).strip()
+            level = str(row.get("orcid_affiliation_level", "")).strip().lower() or "likely"
+            key = _institution_key(institution)
+            if not institution or not key:
+                continue
+            existing = by_key.get(key)
+            if existing is None or _orcid_affiliation_level_rank(level) > _orcid_affiliation_level_rank(existing["level"]):
+                by_key[key] = {"key": key, "name": institution, "level": level}
+        if by_key:
+            by_cluster[cluster_id] = sorted(by_key.values(), key=lambda item: item["name"].lower())
+    return by_cluster
+
+
+def _build_cluster_affiliation_display_rows(
+    *,
+    clusters: list[Cluster],
+    cluster_orcid_affiliation_matches: dict[str, list[dict[str, str]]],
+    target_orcid: str,
+) -> dict[str, list[dict[str, object]]]:
+    by_cluster: dict[str, list[dict[str, object]]] = {}
+    for cluster in clusters:
+        matched_entries = cluster_orcid_affiliation_matches.get(cluster.cluster_id, [])
+        rows: list[dict[str, object]] = []
+        for affiliation in cluster.affiliations:
+            key = _institution_key(affiliation)
+            best_level = ""
+            best_name = ""
+            for entry in matched_entries:
+                entry_key = str(entry.get("key", "")).strip()
+                entry_level = str(entry.get("level", "")).strip().lower()
+                entry_name = str(entry.get("name", "")).strip()
+                if not key or not entry_key:
+                    continue
+                if key == entry_key:
+                    candidate_level = entry_level
+                elif entry_key in key or key in entry_key:
+                    candidate_level = "contains"
+                else:
+                    continue
+                if _orcid_affiliation_level_rank(candidate_level) > _orcid_affiliation_level_rank(best_level):
+                    best_level = candidate_level
+                    best_name = entry_name
+
+            matched = bool(best_level)
+            rows.append(
+                {
+                    "name": affiliation,
+                    "matched": matched,
+                    "match_level": best_level,
+                    "badge_class": _orcid_badge_class(
+                        has_identifier_match=False,
+                        affiliation_level=best_level,
+                    )
+                    if matched
+                    else "orcid-badge",
+                    "badge_title": _orcid_badge_title(
+                        has_identifier_match=False,
+                        identifier_label="",
+                        affiliation_level=best_level,
+                        affiliation_label=f"institution match ({best_name})" if best_name else "",
+                    )
+                    if matched
+                    else "",
+                    "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and matched) else None,
+                }
+            )
+        by_cluster[cluster.cluster_id] = rows
+    return by_cluster
 
 def _sanitize_citation_affiliations(citations: list[Citation]) -> int:
     changed = 0
@@ -575,14 +725,13 @@ def _build_out_of_window_rows(
     end_year: int | None,
     forced_include_pmids: set[str] | None = None,
     orcid_identifier_matches: dict[str, list[str]] | None = None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
 ) -> list[dict[str, object]]:
     if start_year is None or end_year is None:
         return []
     if forced_include_pmids is None:
         forced_include_pmids = set()
-    if orcid_identifier_matches is None:
-        orcid_identifier_matches = {}
     citation_by_pmid = {citation.pmid: citation for citation in citations}
     selected_pmids = {match.pmid for match in matches}
     rows: list[dict[str, object]] = []
@@ -603,10 +752,12 @@ def _build_out_of_window_rows(
                 "year": citation.print_year,
                 "journal": citation.journal,
                 "title": citation.title,
-                "orcid_match_types": list(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_verified": bool(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_match_label": "/".join(value.upper() for value in orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and orcid_identifier_matches.get(citation.pmid, [])) else None,
+                **_orcid_row_fields(
+                    pmid=citation.pmid,
+                    target_orcid=target_orcid,
+                    orcid_identifier_matches=orcid_identifier_matches,
+                    orcid_affiliation_matches=orcid_affiliation_matches,
+                ),
             }
         )
     rows.sort(key=_dict_row_sort_key)
@@ -620,11 +771,10 @@ def _build_excluded_citation_rows(
     excluded_reasons: dict[str, str],
     matches: list[AuthorMatch],
     orcid_identifier_matches: dict[str, list[str]] | None = None,
+    orcid_affiliation_matches: dict[str, dict[str, str]] | None = None,
     target_orcid: str = "",
 ) -> list[dict[str, object]]:
     citation_by_pmid = {citation.pmid: citation for citation in citations}
-    if orcid_identifier_matches is None:
-        orcid_identifier_matches = {}
     matched_pmids = {match.pmid for match in matches}
     rows: list[dict[str, object]] = []
     for pmid in sorted(excluded_pmids):
@@ -643,10 +793,12 @@ def _build_excluded_citation_rows(
                 "journal": citation.journal,
                 "title": citation.title,
                 "reason": excluded_reasons.get(citation.pmid, "Excluded by pre-disambiguation filter"),
-                "orcid_match_types": list(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_verified": bool(orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_match_label": "/".join(value.upper() for value in orcid_identifier_matches.get(citation.pmid, [])),
-                "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and orcid_identifier_matches.get(citation.pmid, [])) else None,
+                **_orcid_row_fields(
+                    pmid=citation.pmid,
+                    target_orcid=target_orcid,
+                    orcid_identifier_matches=orcid_identifier_matches,
+                    orcid_affiliation_matches=orcid_affiliation_matches,
+                ),
             }
         )
     rows.sort(key=_dict_row_sort_key)
@@ -728,6 +880,7 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
         "excluded_pmids": sorted(run.excluded_pmids),
         "excluded_reasons": dict(run.excluded_reasons),
         "orcid_identifier_matches": {k: list(v) for k, v in run.orcid_identifier_matches.items()},
+        "orcid_affiliation_matches": {k: {str(sub_k): str(sub_v) for sub_k, sub_v in value.items()} for k, value in run.orcid_affiliation_matches.items()},
         "orcid_sync_error": run.orcid_sync_error,
     }
 
@@ -751,6 +904,11 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
             str(k): [str(item) for item in values]
             for k, values in dict(payload.get("orcid_identifier_matches", {})).items()
             if isinstance(values, list)
+        },
+        orcid_affiliation_matches={
+            str(k): {str(sub_k): str(sub_v) for sub_k, sub_v in dict(value).items()}
+            for k, value in dict(payload.get("orcid_affiliation_matches", {})).items()
+            if isinstance(value, dict)
         },
         orcid_sync_error=(str(payload.get("orcid_sync_error", "")).strip() or None),
     )
@@ -890,6 +1048,7 @@ def _render_analysis_result(
         row_data = _with_row_render_fields(
             analysis,
             orcid_identifier_matches=run.orcid_identifier_matches,
+            orcid_affiliation_matches=run.orcid_affiliation_matches,
             target_orcid=run.target_orcid,
         )
         uncertain_rows = [row_data[i] for i in analysis.uncertain_indices]
@@ -910,6 +1069,7 @@ def _render_analysis_result(
     row_data = _with_row_render_fields(
         analysis,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     accepted_uncertain_pmids = sorted(
@@ -1078,20 +1238,21 @@ def disambiguate(
         logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
 
     orcid_identifier_matches: dict[str, list[str]] = {}
-    orcid_sync_error: str | None = None
+    orcid_affiliation_matches: dict[str, dict[str, str]] = {}
+    orcid_sync_warnings: list[str] = []
     if target_orcid:
         try:
             orcid_identifier_matches = orcid_client.match_citations(target_orcid, citations)
             logger.info(
-                "ORCiD verification completed: matched %d/%d citation(s)",
+                "ORCiD identifier cross-check completed: matched %d/%d citation(s)",
                 len(orcid_identifier_matches),
                 len(citations),
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ORCiD verification failed for %s: %s", target_orcid, exc)
-            orcid_sync_error = "ORCiD verification unavailable for this run"
-            errors.append(orcid_sync_error)
+            logger.warning("ORCiD identifier cross-check failed for %s: %s", target_orcid, exc)
+            orcid_sync_warnings.append("identifier cross-check unavailable")
 
+    orcid_sync_error: str | None = None
     window_start = None if all_years_enabled else start_year
     window_end = None if all_years_enabled else end_year
 
@@ -1127,12 +1288,43 @@ def disambiguate(
 
     clusters, eligible_matches = build_clusters(disambiguation_citations, target, target_orcid=target_orcid)
     _, all_matches = build_clusters(citations, target, target_orcid=target_orcid)
+
+    if target_orcid:
+        matched_affiliations_by_pmid: dict[str, list[str]] = {}
+        for match in all_matches:
+            affiliation = (match.author.affiliation or "").strip()
+            if not affiliation:
+                continue
+            matched_affiliations_by_pmid.setdefault(match.pmid, []).append(affiliation)
+        if matched_affiliations_by_pmid:
+            try:
+                orcid_affiliation_matches = orcid_client.match_affiliations(target_orcid, matched_affiliations_by_pmid)
+                logger.info(
+                    "ORCiD affiliation cross-check completed: matched %d/%d citation(s)",
+                    len(orcid_affiliation_matches),
+                    len(matched_affiliations_by_pmid),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ORCiD affiliation cross-check failed for %s: %s", target_orcid, exc)
+                orcid_sync_warnings.append("affiliation cross-check unavailable")
+
+    if orcid_sync_warnings:
+        orcid_sync_error = "ORCiD " + "; ".join(orcid_sync_warnings)
+        errors.append(orcid_sync_error)
+
     citation_by_pmid = {citation.pmid: citation for citation in disambiguation_citations}
     cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
     cluster_citation_rows = _build_cluster_citation_rows(
         citations=disambiguation_citations,
         matches=eligible_matches,
         orcid_identifier_matches=orcid_identifier_matches,
+        orcid_affiliation_matches=orcid_affiliation_matches,
+        target_orcid=target_orcid,
+    )
+    cluster_orcid_affiliation_matches = _build_cluster_orcid_affiliation_matches(cluster_citation_rows)
+    cluster_affiliation_display_rows = _build_cluster_affiliation_display_rows(
+        clusters=clusters,
+        cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
         target_orcid=target_orcid,
     )
     missing_affiliation_rows: list[dict[str, object]] = []
@@ -1142,7 +1334,6 @@ def disambiguate(
             continue
         affiliation = match.author.affiliation or ""
         reason = _missing_affiliation_reason(matched_citation, affiliation)
-        match_types = orcid_identifier_matches.get(matched_citation.pmid, [])
         row: dict[str, object] = {
             "cluster_label": cluster_label_by_id.get(match.cluster_id, match.cluster_id),
             "pmid": matched_citation.pmid,
@@ -1154,9 +1345,12 @@ def disambiguate(
             "affiliation": affiliation or "(no affiliation listed)",
             "missing_reason": reason,
             "notes": "; ".join(matched_citation.notes),
-            "orcid_verified": bool(match_types),
-            "orcid_match_label": "/".join(value.upper() for value in match_types),
-            "orcid_record_url": f"https://orcid.org/{target_orcid}" if (target_orcid and match_types) else None,
+            **_orcid_row_fields(
+                pmid=matched_citation.pmid,
+                target_orcid=target_orcid,
+                orcid_identifier_matches=orcid_identifier_matches,
+                orcid_affiliation_matches=orcid_affiliation_matches,
+            ),
         }
         if reason:
             missing_affiliation_rows.append(row)
@@ -1167,6 +1361,7 @@ def disambiguate(
         excluded_reasons=excluded_reasons,
         matches=all_matches,
         orcid_identifier_matches=orcid_identifier_matches,
+        orcid_affiliation_matches=orcid_affiliation_matches,
         target_orcid=target_orcid,
     )
     logger.info(
@@ -1193,6 +1388,7 @@ def disambiguate(
             excluded_pmids=excluded_pmids,
             excluded_reasons=excluded_reasons,
             orcid_identifier_matches=orcid_identifier_matches,
+            orcid_affiliation_matches=orcid_affiliation_matches,
             orcid_sync_error=orcid_sync_error,
         ),
     )
@@ -1209,6 +1405,7 @@ def disambiguate(
             "year_window_label": _year_window_label(window_start, window_end),
             "clusters": clusters,
             "cluster_citation_rows": cluster_citation_rows,
+            "cluster_affiliation_display_rows": cluster_affiliation_display_rows,
             "errors": errors,
             "missing_affiliation_rows": missing_affiliation_rows,
             "excluded_citation_rows": excluded_citation_rows,
@@ -1239,6 +1436,13 @@ def citation_select(
             citations=eligible_citations,
             matches=eligible_matches,
             orcid_identifier_matches=run.orcid_identifier_matches,
+            orcid_affiliation_matches=run.orcid_affiliation_matches,
+            target_orcid=run.target_orcid,
+        )
+        cluster_orcid_affiliation_matches = _build_cluster_orcid_affiliation_matches(cluster_citation_rows)
+        cluster_affiliation_display_rows = _build_cluster_affiliation_display_rows(
+            clusters=run.clusters,
+            cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
             target_orcid=run.target_orcid,
         )
         excluded_citation_rows = _build_excluded_citation_rows(
@@ -1247,6 +1451,7 @@ def citation_select(
             excluded_reasons=run.excluded_reasons,
             matches=run.matches,
             orcid_identifier_matches=run.orcid_identifier_matches,
+            orcid_affiliation_matches=run.orcid_affiliation_matches,
             target_orcid=run.target_orcid,
         )
         return templates.TemplateResponse(
@@ -1261,6 +1466,7 @@ def citation_select(
                 "year_window_label": _year_window_label(run.start_year, run.end_year),
                 "clusters": run.clusters,
                 "cluster_citation_rows": cluster_citation_rows,
+                "cluster_affiliation_display_rows": cluster_affiliation_display_rows,
                 "errors": ["Select at least one author identity cluster."],
                 "missing_affiliation_rows": [],
                 "excluded_citation_rows": excluded_citation_rows,
@@ -1288,6 +1494,7 @@ def citation_select(
         start_year=run.start_year,
         end_year=run.end_year,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     needs_review = any(bool(row["needs_review"]) for row in citation_selection_rows)
@@ -1316,6 +1523,7 @@ def citation_select(
             end_year=run.end_year,
             forced_include_pmids=forced_excluded_pmids,
             orcid_identifier_matches=run.orcid_identifier_matches,
+            orcid_affiliation_matches=run.orcid_affiliation_matches,
             target_orcid=run.target_orcid,
         )
         return _render_analysis_result(
@@ -1355,8 +1563,6 @@ def citation_select(
             ),
         },
     )
-
-
 @app.post("/analyze", response_class=HTMLResponse)
 def analyze(
     request: Request,
@@ -1403,6 +1609,7 @@ def analyze(
         end_year=run.end_year,
         forced_include_pmids=forced_excluded_pmids,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     return _render_analysis_result(
@@ -1472,6 +1679,7 @@ def finalize(
         end_year=run.end_year,
         forced_include_pmids=forced_excluded_pmids,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     return _render_analysis_result(
@@ -1535,6 +1743,7 @@ def report_correct(
         end_year=run.end_year,
         forced_include_pmids=forced_excluded_pmids,
         orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
         target_orcid=run.target_orcid,
     )
     return _render_analysis_result(

@@ -16,6 +16,7 @@
     .outwindow { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
     .orcid-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem; margin-left: 0.3rem; border-radius: 999px; background: #a7f3d0; color: #065f46; font-size: 0.72rem; font-weight: 700; line-height: 1; }
+    .orcid-badge-weak { background: #fef3c7; color: #92400e; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .toolbar { margin-top: 0.75rem; display: flex; gap: 1rem; align-items: center; }
   </style>
@@ -78,7 +79,7 @@
               <td>{{ row.journal }}</td>
               <td>{{ row.title }}</td>
               <td>
-                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
               </td>
               <td>{{ row.authors_html|safe }}</td>

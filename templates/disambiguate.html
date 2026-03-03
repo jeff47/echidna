@@ -19,6 +19,7 @@
     .excluded { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
     .orcid-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem; margin-left: 0.3rem; border-radius: 999px; background: #a7f3d0; color: #065f46; font-size: 0.72rem; font-weight: 700; line-height: 1; }
+    .orcid-badge-weak { background: #fef3c7; color: #92400e; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .error { color: #b42318; }
   </style>
@@ -54,7 +55,16 @@
               <strong>{{ cluster.label }}</strong>
             </label>
             <div class="muted">Mentions: {{ cluster.mention_count }} | Years: {{ cluster.years|join(', ') if cluster.years else 'n/a' }}</div>
-            <div class="muted">Affiliations: {{ cluster.affiliations|join(' | ') }}</div>
+            {% set affiliation_rows = cluster_affiliation_display_rows.get(cluster.cluster_id, []) %}
+            <div class="muted">Affiliations:
+              {% if affiliation_rows %}
+                {% for affiliation in affiliation_rows %}
+                  {{ affiliation.name }}{% if affiliation.matched %}<a class="{{ affiliation.badge_class }}" href="{{ affiliation.orcid_record_url }}" target="_blank" rel="noopener" title="{{ affiliation.badge_title }}">iD</a>{% endif %}{% if not loop.last %} | {% endif %}
+                {% endfor %}
+              {% else %}
+                {{ cluster.affiliations|join(' | ') }}
+              {% endif %}
+            </div>
             {% set cluster_rows = cluster_citation_rows.get(cluster.cluster_id, []) %}
             {% if cluster_rows %}
               <table class="subtable">
@@ -70,7 +80,7 @@
                     <tr>
                       <td>{{ row.year if row.year else 'n/a' }}</td>
                       <td>{{ row.journal }}</td>
-                      <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}</td>
+                      <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -98,9 +108,9 @@
                   <td><input type="checkbox" name="selected_excluded_pmids" value="{{ row.pmid }}" {% if row.pmid in selected_excluded_pmids %}checked{% endif %}></td>
                   <td>{{ row.year if row.year else 'n/a' }}</td>
                   <td>{{ row.journal }}</td>
-                  <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}</td>
+                  <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}</td>
                   <td>
-                    <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}
+                    <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}
                     {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
                   </td>
                   <td>{{ row.reason }}</td>
@@ -132,7 +142,7 @@
               <tr class="warn">
                 <td>{{ row.cluster_label }}</td>
                 <td>
-                  <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}
+                  <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}
                   {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
                 </td>
                 <td>{{ row.year if row.year else 'n/a' }}</td>

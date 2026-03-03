@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from app.main import _build_citation_selection_rows
+from app.main import _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields
 from app.models import Author, AuthorMatch, Citation
 
 
@@ -99,3 +99,64 @@ def test_citation_selection_no_review_when_single_given_match_with_affiliation()
     assert len(rows) == 1
     assert rows[0]["needs_review"] is False
     assert rows[0]["review_reason"] == ""
+
+
+def test_cluster_orcid_affiliation_matches_dedupes_institutions_and_keeps_strongest_level() -> None:
+    cluster_rows = {
+        "cluster-a": [
+            {
+                "orcid_affiliation_verified": True,
+                "orcid_affiliation_institution": "Brigham and Women's Hospital",
+                "orcid_affiliation_level": "contains",
+            },
+            {
+                "orcid_affiliation_verified": True,
+                "orcid_affiliation_institution": "Harvard Medical School",
+                "orcid_affiliation_level": "possible",
+            },
+            {
+                "orcid_affiliation_verified": True,
+                "orcid_affiliation_institution": "Brigham and Women's Hospital",
+                "orcid_affiliation_level": "likely",
+            },
+            {
+                "orcid_affiliation_verified": False,
+                "orcid_affiliation_institution": "Ignored Institute",
+                "orcid_affiliation_level": "verified",
+            },
+        ]
+    }
+
+    matches = _build_cluster_orcid_affiliation_matches(cluster_rows)
+
+    assert matches["cluster-a"] == [
+        {
+            "key": "brighamandwomenshospital",
+            "name": "Brigham and Women's Hospital",
+            "level": "likely",
+        },
+        {
+            "key": "harvardmedicalschool",
+            "name": "Harvard Medical School",
+            "level": "possible",
+        },
+    ]
+
+
+def test_orcid_row_fields_hides_citation_badge_for_affiliation_only_match() -> None:
+    fields = _orcid_row_fields(
+        pmid="200",
+        target_orcid="0000-0001-2345-6789",
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={
+            "200": {
+                "level": "contains",
+                "label": "affiliation contains institution (Brigham and Women's Hospital)",
+                "institution": "Brigham and Women's Hospital",
+            }
+        },
+    )
+
+    assert fields["orcid_badge_show"] is False
+    assert fields["orcid_affiliation_verified"] is True
+    assert fields["orcid_affiliation_level"] == "contains"

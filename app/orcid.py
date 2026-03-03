@@ -3,15 +3,28 @@ from __future__ import annotations
 import os
 import re
 import time
+from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Any
 
 import httpx
 
+from app.logic import _extract_institution_names, _institution_key, normalize_text
 from app.models import Citation
 
 DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
 NON_DIGIT = re.compile(r"\D+")
 NON_ALNUM = re.compile(r"[^A-Z0-9]+")
+NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+@dataclass(slots=True)
+class OrcidOrganization:
+    name: str
+    key: str
+    signature: str
+    country: str
+    identifier: str
 
 
 class OrcidClient:
@@ -57,6 +70,30 @@ class OrcidClient:
                 matches_by_pmid[citation.pmid] = sorted(set(match_types))
         return matches_by_pmid
 
+    def match_affiliations(
+        self,
+        target_orcid: str,
+        affiliations_by_pmid: dict[str, list[str]],
+    ) -> dict[str, dict[str, str]]:
+        if not target_orcid.strip() or not affiliations_by_pmid:
+            return {}
+
+        organizations = self.fetch_affiliation_organizations(target_orcid)
+        if not organizations:
+            return {}
+
+        orgs_by_key: dict[str, list[OrcidOrganization]] = {}
+        for org in organizations:
+            orgs_by_key.setdefault(org.key, []).append(org)
+
+        matches_by_pmid: dict[str, dict[str, str]] = {}
+        for pmid, affiliations in affiliations_by_pmid.items():
+            match = _match_affiliation_set(affiliations, organizations, orgs_by_key)
+            if match is None:
+                continue
+            matches_by_pmid[pmid] = match
+        return matches_by_pmid
+
     def fetch_work_identifiers(self, target_orcid: str) -> dict[str, set[str]]:
         if not self.is_configured:
             raise RuntimeError("ORCiD API client credentials are not configured")
@@ -74,6 +111,24 @@ class OrcidClient:
         if not isinstance(payload, dict):
             return {"doi": set(), "pmid": set(), "pmcid": set()}
         return _extract_work_identifiers(payload)
+
+    def fetch_affiliation_organizations(self, target_orcid: str) -> list[OrcidOrganization]:
+        if not self.is_configured:
+            raise RuntimeError("ORCiD API client credentials are not configured")
+
+        token = self._get_access_token()
+        url = f"{self.api_base_url}/{target_orcid}/activities"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+            response = client.get(url, headers=headers)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return []
+        return _extract_affiliation_organizations(payload)
 
     def _get_access_token(self) -> str:
         now = time.monotonic()
@@ -167,6 +222,166 @@ def _collect_external_ids(external_ids_node: Any, identifiers: dict[str, set[str
             if normalized:
                 identifiers["pmcid"].add(normalized)
             continue
+
+
+def _extract_affiliation_organizations(payload: dict[str, Any]) -> list[OrcidOrganization]:
+    organizations: list[OrcidOrganization] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for org in _iter_organizations(payload):
+        raw_name = str(org.get("name", "")).strip()
+        if not raw_name:
+            continue
+        key = _institution_key(raw_name)
+        if not key:
+            continue
+
+        address = org.get("address")
+        country = ""
+        if isinstance(address, dict):
+            country = str(address.get("country", "")).strip().upper()
+
+        disambiguated = org.get("disambiguated-organization")
+        identifier = ""
+        if isinstance(disambiguated, dict):
+            identifier = _normalize_org_identifier(str(disambiguated.get("disambiguated-organization-identifier", "")))
+
+        dedupe_key = (key, country, identifier)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        organizations.append(
+            OrcidOrganization(
+                name=_clean_org_name(raw_name),
+                key=key,
+                signature=_org_signature(raw_name),
+                country=country,
+                identifier=identifier,
+            )
+        )
+
+    return organizations
+
+
+def _iter_organizations(node: Any) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if isinstance(node, dict):
+        org = node.get("organization")
+        if isinstance(org, dict):
+            found.append(org)
+        for value in node.values():
+            found.extend(_iter_organizations(value))
+        return found
+    if isinstance(node, list):
+        for item in node:
+            found.extend(_iter_organizations(item))
+    return found
+
+
+def _match_affiliation_set(
+    affiliations: list[str],
+    organizations: list[OrcidOrganization],
+    orgs_by_key: dict[str, list[OrcidOrganization]],
+) -> dict[str, str] | None:
+    best_possible: tuple[float, OrcidOrganization] | None = None
+
+    for affiliation in affiliations:
+        raw_affiliation = (affiliation or "").strip()
+        if not raw_affiliation:
+            continue
+
+        institution_names = _extract_institution_names(raw_affiliation)
+        if not institution_names:
+            institution_names = [raw_affiliation]
+
+        for institution_name in institution_names:
+            inst_key = _institution_key(institution_name)
+            if not inst_key:
+                continue
+
+            candidates = orgs_by_key.get(inst_key, [])
+            if candidates:
+                with_identifier = [candidate for candidate in candidates if candidate.identifier]
+                if with_identifier and any(_identifier_in_affiliation(raw_affiliation, candidate.identifier) for candidate in with_identifier):
+                    chosen = with_identifier[0]
+                    return {
+                        "level": "verified",
+                        "label": f"organization identifier ({chosen.name})",
+                        "institution": chosen.name,
+                    }
+
+                chosen = candidates[0]
+                return {
+                    "level": "likely",
+                    "label": f"institution match ({chosen.name})",
+                    "institution": chosen.name,
+                }
+
+            # Weaker match: publication affiliation contains an ORCiD institution string
+            # inside a compound affiliation (e.g., "Harvard ... - Brigham and Women's").
+            contains_candidates = [
+                org
+                for org in organizations
+                if len(org.key) >= 10 and (org.key in inst_key or inst_key in org.key)
+            ]
+            if contains_candidates:
+                chosen = max(contains_candidates, key=lambda org: len(org.key))
+                return {
+                    "level": "contains",
+                    "label": f"affiliation contains institution ({chosen.name})",
+                    "institution": chosen.name,
+                }
+
+            inst_signature = _org_signature(institution_name)
+            if not inst_signature:
+                continue
+            for org in organizations:
+                ratio = SequenceMatcher(a=inst_signature, b=org.signature).ratio()
+                if ratio < 0.9:
+                    continue
+                if best_possible is None or ratio > best_possible[0]:
+                    best_possible = (ratio, org)
+
+    if best_possible is None:
+        return None
+    return {
+        "level": "possible",
+        "label": f"name similarity ({best_possible[1].name})",
+        "institution": best_possible[1].name,
+    }
+
+
+def _identifier_in_affiliation(affiliation: str, identifier: str) -> bool:
+    if not affiliation or not identifier:
+        return False
+    normalized_affiliation = NON_WORD.sub("", affiliation.lower())
+    normalized_identifier = NON_WORD.sub("", identifier.lower())
+    if not normalized_identifier:
+        return False
+    return normalized_identifier in normalized_affiliation
+
+
+def _normalize_org_identifier(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    raw = raw.rstrip("/")
+    lower = raw.lower()
+    if "ror.org/" in lower:
+        raw = raw[lower.rfind("ror.org/") + len("ror.org/") :]
+    return NON_WORD.sub("", raw.lower())
+
+
+def _clean_org_name(name: str) -> str:
+    return " ".join(name.strip().split())
+
+
+def _org_signature(name: str) -> str:
+    value = normalize_text(name)
+    value = value.replace("&", " and ")
+    value = NON_WORD.sub(" ", value)
+    return " ".join(value.split())
 
 
 def _external_id_value(external_id: dict[str, Any]) -> str:

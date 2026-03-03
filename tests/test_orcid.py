@@ -1,5 +1,5 @@
 from app.models import Author, Citation
-from app.orcid import OrcidClient, _extract_work_identifiers
+from app.orcid import OrcidClient, OrcidOrganization, _extract_affiliation_organizations, _extract_work_identifiers
 
 
 def _citation(*, pmid: str, pmcid: str | None, doi: str | None) -> Citation:
@@ -64,3 +64,98 @@ def test_match_citations_matches_by_any_identifier() -> None:
     assert matches["222"] == ["pmid"]
     assert matches["444"] == ["pmcid"]
     assert "555" not in matches
+
+
+def test_extract_affiliation_organizations_reads_activity_summaries() -> None:
+    payload = {
+        "activities-summary": {
+            "employments": {
+                "affiliation-group": [
+                    {
+                        "summaries": [
+                            {
+                                "employment-summary": {
+                                    "organization": {
+                                        "name": "Brigham & Women's Hospital",
+                                        "address": {"city": "Boston", "country": "US"},
+                                        "disambiguated-organization": {
+                                            "disambiguated-organization-identifier": "https://ror.org/03zjqec80",
+                                            "disambiguation-source": "ROR",
+                                        },
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+
+    organizations = _extract_affiliation_organizations(payload)
+
+    assert len(organizations) == 1
+    assert organizations[0].name == "Brigham & Women's Hospital"
+    assert organizations[0].country == "US"
+    assert organizations[0].identifier == "03zjqec80"
+
+
+def test_match_affiliations_supports_likely_contains_and_possible_levels() -> None:
+    class FakeOrcidClient(OrcidClient):
+        def fetch_affiliation_organizations(self, target_orcid: str) -> list[OrcidOrganization]:
+            _ = target_orcid
+            return _extract_affiliation_organizations(
+                {
+                    "activities-summary": {
+                        "employments": {
+                            "affiliation-group": [
+                                {
+                                    "summaries": [
+                                        {
+                                            "employment-summary": {
+                                                "organization": {
+                                                    "name": "Brigham and Women's Hospital",
+                                                    "address": {"country": "US"},
+                                                    "disambiguated-organization": {
+                                                        "disambiguated-organization-identifier": "https://ror.org/03zjqec80"
+                                                    },
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "employment-summary": {
+                                                "organization": {
+                                                    "name": "Harvard Medical School",
+                                                    "address": {"country": "US"},
+                                                }
+                                            }
+                                        },
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            )
+
+    client = FakeOrcidClient(client_id="id", client_secret="secret")
+    matches = client.match_affiliations(
+        "0000-0001-2345-6789",
+        {
+            "100": ["Renal Division, Brigham & Women's Hospital, Boston, MA, USA"],
+            "101": ["Harvard Med School, Boston, MA"],
+            "102": ["Some Other Institute"],
+            "103": ["Mass General Brigham/Brigham and Women's Hospital, Boston, MA, USA"],
+        },
+    )
+
+    assert matches["100"]["level"] == "likely"
+    assert matches["100"]["institution"] == "Brigham and Women's Hospital"
+    assert "institution match" in matches["100"]["label"]
+    assert matches["101"]["level"] == "possible"
+    assert matches["101"]["institution"] == "Harvard Medical School"
+    assert "name similarity" in matches["101"]["label"]
+    assert matches["103"]["level"] == "contains"
+    assert matches["103"]["institution"] == "Brigham and Women's Hospital"
+    assert "affiliation contains institution" in matches["103"]["label"]
+    assert "102" not in matches

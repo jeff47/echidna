@@ -15,6 +15,7 @@ Precision-first webapp for publication counting from PMID lists with author disa
 - Uses PubMed metadata for citation details and print dates.
 - Uses PMC XML as the primary source for author-level metadata (author list, affiliations, co-first/co-senior notes).
 - Falls back to PubMed author/order data only when PMC is unavailable or parsing fails, and marks fallback in output.
+- Optional ORCiD cross-checks: publication identifier matches (DOI/PMID/PMCID) and affiliation name matches are shown as badges in review/report tables.
 - Optional publication-type filtering for peer-reviewed outputs (default exclusions include preprints, editorials, comments, letters, news, etc.).
 - Review articles are tracked separately: senior-author reviews are counted separately and excluded from the overall publication total.
 
