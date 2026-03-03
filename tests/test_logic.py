@@ -45,6 +45,28 @@ def _author(position: int, last: str, fore: str, initials: str, aff: str, *, orc
 
 
 
+
+
+def test_parse_target_name_accepts_surname_initial_formats() -> None:
+    t1 = parse_target_name("Rice J")
+    assert t1.surname == "rice"
+    assert t1.initials == "j"
+    assert t1.style == "initials"
+
+    t2 = parse_target_name("Rice JS")
+    assert t2.surname == "rice"
+    assert t2.initials == "js"
+    assert t2.style == "initials"
+
+
+def test_initials_style_matches_surname_plus_initials() -> None:
+    target = parse_target_name("Rice JS")
+    author = _author(1, "Rice", "Jeffrey Stephen", "JS", "Inst")
+    matched, method = match_author(author, target)
+
+    assert matched is True
+    assert method == "initials"
+
 def test_parse_target_orcid_accepts_normalized_and_url_forms() -> None:
     assert parse_target_orcid("0000-0002-1825-0097") == "0000-0002-1825-0097"
     assert parse_target_orcid("https://orcid.org/0000-0002-1825-0097") == "0000-0002-1825-0097"

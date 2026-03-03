@@ -36,6 +36,7 @@ class TargetName:
     surname: str
     given: str
     initials: str
+    style: Literal["full", "initials"] = "full"
 
 
 @dataclass(slots=True)

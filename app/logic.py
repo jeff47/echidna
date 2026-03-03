@@ -70,6 +70,16 @@ def extract_initials(given: str) -> str:
     return "".join(p[0].lower() for p in parts)
 
 
+
+
+def _looks_like_initial_token(token: str) -> bool:
+    cleaned = normalize_token(token)
+    if not cleaned or len(cleaned) > 4:
+        return False
+    if len(cleaned) == 1:
+        return True
+    return token.isupper() or "." in token
+
 def parse_pmids(raw_text: str) -> list[str]:
     candidates = re.findall(r"\d+", raw_text)
     seen: set[str] = set()
@@ -82,13 +92,59 @@ def parse_pmids(raw_text: str) -> list[str]:
 
 
 def parse_target_name(raw_name: str) -> TargetName:
-    tokens = [t for t in raw_name.strip().split() if t]
+    raw = raw_name.strip()
+    if not raw:
+        raise ValueError("Author name must include at least given name and surname")
+
+    if "," in raw:
+        surname_part, given_part = raw.split(",", 1)
+        surname = normalize_token(surname_part)
+        given_tokens = [t for t in given_part.strip().split() if t]
+        if surname and given_tokens:
+            if all(_looks_like_initial_token(token) for token in given_tokens):
+                initials = "".join(normalize_token(token) for token in given_tokens)
+                return TargetName(
+                    raw=raw,
+                    surname=surname,
+                    given=normalize_text(" ".join(given_tokens)),
+                    initials=initials,
+                    style="initials",
+                )
+            given = normalize_text(" ".join(given_tokens))
+            initials = extract_initials(given)
+            return TargetName(raw=raw, surname=surname, given=given, initials=initials, style="full")
+
+    tokens = [t for t in raw.split() if t]
     if len(tokens) < 2:
         raise ValueError("Author name must include at least given name and surname")
+
+    first = tokens[0]
+    rest = tokens[1:]
+    if all(_looks_like_initial_token(token) for token in rest):
+        initials = "".join(normalize_token(token) for token in rest)
+        return TargetName(
+            raw=raw,
+            surname=normalize_token(first),
+            given=normalize_text(" ".join(rest)),
+            initials=initials,
+            style="initials",
+        )
+
     surname = normalize_token(tokens[-1])
-    given = normalize_text(" ".join(tokens[:-1]))
+    given_tokens = tokens[:-1]
+    if all(_looks_like_initial_token(token) for token in given_tokens):
+        initials = "".join(normalize_token(token) for token in given_tokens)
+        return TargetName(
+            raw=raw,
+            surname=surname,
+            given=normalize_text(" ".join(given_tokens)),
+            initials=initials,
+            style="initials",
+        )
+
+    given = normalize_text(" ".join(given_tokens))
     initials = extract_initials(given)
-    return TargetName(raw=raw_name.strip(), surname=surname, given=given, initials=initials)
+    return TargetName(raw=raw, surname=surname, given=given, initials=initials, style="full")
 
 
 def normalize_orcid(value: str) -> str:
@@ -184,7 +240,12 @@ def match_author(author: Author, target: TargetName, target_orcid: str = "") -> 
         return False, None
 
     author_given = normalize_text(author.fore_name)
-    author_initials = normalize_token(author.initials).lower()
+    author_initials = normalize_token(author.initials).lower() or extract_initials(author.fore_name)
+
+    if target.style == "initials":
+        if author_initials and target.initials and author_initials.startswith(target.initials):
+            return True, "initials"
+        return False, None
 
     if author_given and target.given:
         # Prefix matching handles cases like "John Michael" vs "John M"
