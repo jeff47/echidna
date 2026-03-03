@@ -184,6 +184,74 @@
       margin-top: 0.5rem;
     }
 
+    .author-name-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .author-name-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .secondary-button {
+      margin-top: 0;
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.86rem;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .secondary-button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .orcid-search-status {
+      margin-top: 0.45rem;
+      font-size: 0.85rem;
+    }
+
+    .orcid-search-panel {
+      margin-top: 0.45rem;
+    }
+
+    .orcid-search-results {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 360px;
+      background: #fbfcfe;
+    }
+
+    .orcid-search-results table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .orcid-search-results th,
+    .orcid-search-results td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.35rem 0.45rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .orcid-search-results th {
+      background: #f1f5f9;
+    }
+
+    .orcid-search-results .secondary-button {
+      padding: 0.3rem 0.55rem;
+      font-size: 0.8rem;
+    }
+
     @media (max-width: 700px) {
       .year-row {
         align-items: stretch;
@@ -199,8 +267,16 @@
       }
     }
 
-    .header-row { display: flex; align-items: center; gap: 0.5rem; }
-    .header-row h1 { margin: 0; }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .header-row h1 {
+      margin: 0;
+    }
+
     .help-icon {
       display: inline-flex;
       align-items: center;
@@ -216,7 +292,11 @@
       line-height: 1;
       font-size: 0.95rem;
     }
-    .help-overlay[hidden] { display: none; }
+
+    .help-overlay[hidden] {
+      display: none;
+    }
+
     .help-overlay {
       position: fixed;
       inset: 0;
@@ -227,6 +307,7 @@
       padding: 1rem;
       z-index: 1000;
     }
+
     .help-dialog {
       width: min(640px, 100%);
       max-height: 85vh;
@@ -236,6 +317,7 @@
       border-radius: 12px;
       padding: 1rem;
     }
+
     .help-dialog-header {
       display: flex;
       align-items: center;
@@ -243,19 +325,31 @@
       gap: 0.5rem;
       margin-bottom: 0.5rem;
     }
+
     .help-dialog h2 {
       margin: 0;
       font-size: 1.05rem;
     }
+
     .help-dialog p,
     .help-dialog li {
       color: #334155;
       font-size: 0.95rem;
     }
+
     .help-dialog ul {
       margin: 0.5rem 0 0;
       padding-left: 1.2rem;
     }
+
+    .help-dialog code {
+      background: #dbeafe;
+      color: #1e3a8a;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+      padding: 0.05rem 0.3rem;
+    }
+
     .help-close {
       margin-top: 0;
       background: #f8fafc;
@@ -267,11 +361,13 @@
       font-size: 1.05rem;
       cursor: pointer;
     }
+
     .help-actions {
       display: flex;
       justify-content: flex-end;
       margin-top: 0.9rem;
     }
+
     .help-actions button {
       margin-top: 0;
       background: #1d4ed8;
@@ -281,7 +377,6 @@
       padding: 0.45rem 0.8rem;
       cursor: pointer;
     }
-
   </style>
 </head>
 
@@ -291,7 +386,10 @@
       <div class="brand">
         <img src="/echidna.jpg" alt="ECHIDNA logo">
         <div>
-          <div class="header-row"><h1>ECHIDNA</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
+          <div class="header-row">
+            <h1>ECHIDNA</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help"
+              title="Help">?</a>
+          </div>
           <p class="tagline"><strong>E</strong>xtract <strong>C</strong>itations, <strong>H</strong>andle
             <strong>I</strong>nstitutional <strong>D</strong>ata, and <strong>N</strong>ormalize
             <strong>A</strong>uthors.
@@ -303,13 +401,34 @@
         <div class="identity-row">
           <div class="identity-field name">
             <label for="author_name" class="author-label">Author Name</label>
-            <input id="author_name" class="author-input" name="author_name" value="{{ author_name }}" required>
+            <div class="author-name-row">
+              <input id="author_name" class="author-input" name="author_name" value="{{ author_name }}" required>
+              <button type="button" id="orcid-search-btn" class="secondary-button"
+                title="Search ORCiD by author name">Search ORCiD</button>
+            </div>
           </div>
           <div class="identity-field orcid">
             <label for="author_orcid" class="author-label">Author <a href="https://orcid.org/" target="_blank"
                 rel="noopener">ORCiD</a> (Recommended)</label>
             <input id="author_orcid" class="author-input" name="author_orcid" value="{{ author_orcid }}"
               placeholder="0000-0000-0000-0000">
+          </div>
+        </div>
+
+        <div class="orcid-search-panel">
+          <div id="orcid-search-status" class="muted orcid-search-status" aria-live="polite"></div>
+          <div id="orcid-search-results" class="orcid-search-results" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>ORCiD</th>
+                  <th>Institution</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="orcid-search-results-body"></tbody>
+            </table>
           </div>
         </div>
 
@@ -359,74 +478,202 @@
         <button type="submit">Find Author Clusters</button>
       </form>
 
-    <div id="help-overlay" class="help-overlay" hidden>
-      <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title">
-        <div class="help-dialog-header">
-          <h2 id="help-title">Help: Start Page</h2>
-          <button type="button" id="help-close" class="help-close" aria-label="Close help">&times;</button>
-        </div>
-        <p>Use this page to start a new run.</p>
-        <ul>
-          <li>Enter the author name (and optional ORCiD).</li>
-          <li>Accepted name formats include: <code>Jeffrey Rice</code>, <code>Rice J</code>, <code>Rice JS</code>, <code>Rice, Jeffrey</code>, and <code>Rice, J</code>.</li>
-          <li>Set year bounds, or check all-years to ignore the year filter.</li>
-          <li>Paste PMIDs or upload a text file with one PMID per line.</li>
-          <li>Choose filtering options (peer-reviewed only and extra publication types to ignore).</li>
-          <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
-        </ul>
-        <div class="help-actions">
-          <button type="button" id="help-dismiss">Close</button>
+      <div id="help-overlay" class="help-overlay" hidden>
+        <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title">
+          <div class="help-dialog-header">
+            <h2 id="help-title">Help: Start Page</h2>
+            <button type="button" id="help-close" class="help-close" aria-label="Close help">&times;</button>
+          </div>
+          <p>Use this page to start a new run.</p>
+          <ul>
+            <li>Enter the author name (and optional ORCiD).</li>
+            <li>Accepted name formats include: <code>Anthony Fauci</code>, <code>Fauci A</code>, <code>Fauci AS</code>,
+              <code>Fauci, Anthony</code>, and <code>Fauci, A</code>.</li>
+            <li>To look up an ORCiD from the name, click <strong>Search ORCiD</strong>, review the returned profiles,
+              then click <strong>Use ID</strong> to auto-fill the ORCiD field (the match list closes after selection).
+            </li>
+            <li>Set year bounds, or check all-years to ignore the year filter.</li>
+            <li>Paste PMIDs or upload a text file with one PMID per line.</li>
+            <li>Choose filtering options (peer-reviewed only and extra publication types to ignore).</li>
+            <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
+          </ul>
+          <div class="help-actions">
+            <button type="button" id="help-dismiss">Close</button>
+          </div>
         </div>
       </div>
     </div>
-    </div>
   </main>
-<script>
+  <script>
 
-  const helpLink = document.getElementById("help-link");
-  const helpOverlay = document.getElementById("help-overlay");
-  const helpClose = document.getElementById("help-close");
-  const helpDismiss = document.getElementById("help-dismiss");
+    const helpLink = document.getElementById("help-link");
+    const helpOverlay = document.getElementById("help-overlay");
+    const helpClose = document.getElementById("help-close");
+    const helpDismiss = document.getElementById("help-dismiss");
 
-  function openHelp(event) {
-    if (event) {
-      event.preventDefault();
+    function openHelp(event) {
+      if (event) {
+        event.preventDefault();
+      }
+      if (!helpOverlay) {
+        return;
+      }
+      helpOverlay.hidden = false;
     }
-    if (!helpOverlay) {
-      return;
-    }
-    helpOverlay.hidden = false;
-  }
 
-  function closeHelp() {
-    if (!helpOverlay) {
-      return;
+    function closeHelp() {
+      if (!helpOverlay) {
+        return;
+      }
+      helpOverlay.hidden = true;
     }
-    helpOverlay.hidden = true;
-  }
 
-  if (helpLink) {
-    helpLink.addEventListener("click", openHelp);
-  }
-  if (helpClose) {
-    helpClose.addEventListener("click", closeHelp);
-  }
-  if (helpDismiss) {
-    helpDismiss.addEventListener("click", closeHelp);
-  }
-  if (helpOverlay) {
-    helpOverlay.addEventListener("click", (event) => {
-      if (event.target === helpOverlay) {
+    if (helpLink) {
+      helpLink.addEventListener("click", openHelp);
+    }
+    if (helpClose) {
+      helpClose.addEventListener("click", closeHelp);
+    }
+    if (helpDismiss) {
+      helpDismiss.addEventListener("click", closeHelp);
+    }
+    if (helpOverlay) {
+      helpOverlay.addEventListener("click", (event) => {
+        if (event.target === helpOverlay) {
+          closeHelp();
+        }
+      });
+    }
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
         closeHelp();
       }
     });
-  }
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      closeHelp();
+
+    const authorNameInput = document.getElementById("author_name");
+    const authorOrcidInput = document.getElementById("author_orcid");
+    const orcidSearchBtn = document.getElementById("orcid-search-btn");
+    const orcidSearchStatus = document.getElementById("orcid-search-status");
+    const orcidSearchResults = document.getElementById("orcid-search-results");
+    const orcidSearchResultsBody = document.getElementById("orcid-search-results-body");
+
+    function clearOrcidSearchResults() {
+      if (orcidSearchResultsBody) {
+        orcidSearchResultsBody.innerHTML = "";
+      }
+      if (orcidSearchResults) {
+        orcidSearchResults.hidden = true;
+      }
     }
-  });
-</script>
+
+    function setOrcidSearchStatus(message, isError = false) {
+      if (!orcidSearchStatus) {
+        return;
+      }
+      orcidSearchStatus.textContent = message;
+      orcidSearchStatus.style.color = isError ? "#b42318" : "#52606d";
+    }
+
+    function renderOrcidSearchResults(matches) {
+      if (!orcidSearchResultsBody || !orcidSearchResults) {
+        return;
+      }
+      orcidSearchResultsBody.innerHTML = "";
+      for (const row of matches) {
+        const tr = document.createElement("tr");
+
+        const nameCell = document.createElement("td");
+        nameCell.textContent = row.display_name || "(name unavailable)";
+
+        const orcidCell = document.createElement("td");
+        const orcidLink = document.createElement("a");
+        orcidLink.href = row.record_url || `https://orcid.org/${row.orcid}`;
+        orcidLink.target = "_blank";
+        orcidLink.rel = "noopener";
+        orcidLink.textContent = row.orcid || "";
+        orcidCell.appendChild(orcidLink);
+
+        const instCell = document.createElement("td");
+        const institution = row.institution || "";
+        const country = row.country || "";
+        instCell.textContent = [institution, country].filter(Boolean).join(" | ") || "(not listed)";
+
+        const actionCell = document.createElement("td");
+        const useBtn = document.createElement("button");
+        useBtn.type = "button";
+        useBtn.className = "secondary-button";
+        useBtn.textContent = "Use ID";
+        useBtn.dataset.orcid = row.orcid || "";
+        actionCell.appendChild(useBtn);
+
+        tr.appendChild(nameCell);
+        tr.appendChild(orcidCell);
+        tr.appendChild(instCell);
+        tr.appendChild(actionCell);
+        orcidSearchResultsBody.appendChild(tr);
+      }
+      orcidSearchResults.hidden = matches.length === 0;
+    }
+
+    async function runOrcidSearch() {
+      const name = (authorNameInput?.value || "").trim();
+      if (name.length < 2) {
+        clearOrcidSearchResults();
+        setOrcidSearchStatus("Enter at least 2 characters to search ORCiD.", true);
+        return;
+      }
+
+      if (orcidSearchBtn) {
+        orcidSearchBtn.disabled = true;
+      }
+      setOrcidSearchStatus("Searching ORCiD...");
+
+      try {
+        const response = await fetch(`/orcid-search?author_name=${encodeURIComponent(name)}&limit=25`);
+        const payload = await response.json();
+        if (!response.ok) {
+          const detail = typeof payload?.detail === "string" ? payload.detail : "ORCiD search failed.";
+          throw new Error(detail);
+        }
+
+        const matches = Array.isArray(payload?.matches) ? payload.matches : [];
+        if (matches.length === 0) {
+          clearOrcidSearchResults();
+          setOrcidSearchStatus("No ORCiD matches found.");
+          return;
+        }
+
+        renderOrcidSearchResults(matches);
+        setOrcidSearchStatus(`Found ${matches.length} ORCiD match(es).`);
+      } catch (error) {
+        clearOrcidSearchResults();
+        setOrcidSearchStatus(error?.message || "ORCiD search failed.", true);
+      } finally {
+        if (orcidSearchBtn) {
+          orcidSearchBtn.disabled = false;
+        }
+      }
+    }
+
+    if (orcidSearchBtn) {
+      orcidSearchBtn.addEventListener("click", runOrcidSearch);
+    }
+    if (orcidSearchResultsBody) {
+      orcidSearchResultsBody.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) {
+          return;
+        }
+        const selected = target.dataset.orcid || "";
+        if (!selected || !authorOrcidInput) {
+          return;
+        }
+        authorOrcidInput.value = selected;
+        clearOrcidSearchResults();
+        setOrcidSearchStatus(`Selected ORCiD ${selected}.`);
+      });
+    }
+  </script>
 </body>
 
 </html>

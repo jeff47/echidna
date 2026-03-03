@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -1161,6 +1161,27 @@ def index(request: Request) -> HTMLResponse:
             "error": None,
         },
     )
+
+
+@app.get("/orcid-search")
+def orcid_search(
+    author_name: str = Query(..., min_length=2),
+    limit: int = Query(default=25, ge=1, le=50),
+) -> dict[str, object]:
+    query = author_name.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="Enter at least 2 characters for ORCiD search")
+
+    try:
+        matches = orcid_client.search_profiles(query, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ORCiD profile search failed for %r: %s", query, exc)
+        raise HTTPException(status_code=502, detail="ORCiD search unavailable") from exc
+
+    return {
+        "author_name": query,
+        "matches": matches,
+    }
 
 
 @app.get("/echidna.jpg", include_in_schema=False)

@@ -2,7 +2,10 @@ import pytest
 
 pytest.importorskip("fastapi")
 
+from fastapi.testclient import TestClient
+
 from app.logic import AnalysisResult
+from app.main import app as fastapi_app
 from app.main import _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields, _with_row_render_fields
 from app.models import Author, AuthorMatch, Citation, ReportRow
 
@@ -229,3 +232,30 @@ def test_with_row_render_fields_skips_missing_orcid_note_when_identifier_check_u
     )
 
     assert "No match from ORCiD" not in str(rows[0]["notes"])
+
+
+def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as main_module
+
+    def fake_search_profiles(author_name: str, limit: int = 12) -> list[dict[str, str]]:
+        assert author_name == "Jeffrey Rice"
+        assert limit == 3
+        return [
+            {
+                "orcid": "0000-0002-1825-0097",
+                "display_name": "Jeffrey Rice",
+                "institution": "NIH",
+                "country": "US",
+                "record_url": "https://orcid.org/0000-0002-1825-0097",
+            }
+        ]
+
+    monkeypatch.setattr(main_module.orcid_client, "search_profiles", fake_search_profiles)
+
+    client = TestClient(fastapi_app)
+    response = client.get("/orcid-search", params={"author_name": "Jeffrey Rice", "limit": 3})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["author_name"] == "Jeffrey Rice"
+    assert payload["matches"][0]["orcid"] == "0000-0002-1825-0097"

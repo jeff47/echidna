@@ -1,5 +1,13 @@
 from app.models import Author, Citation
-from app.orcid import OrcidClient, OrcidOrganization, _extract_affiliation_organizations, _extract_work_identifiers
+from app.orcid import (
+    OrcidClient,
+    OrcidOrganization,
+    _build_profile_search_queries,
+    _extract_affiliation_organizations,
+    _extract_basic_search_matches,
+    _extract_expanded_search_matches,
+    _extract_work_identifiers,
+)
 
 
 def _citation(*, pmid: str, pmcid: str | None, doi: str | None) -> Citation:
@@ -159,3 +167,118 @@ def test_match_affiliations_supports_likely_contains_and_possible_levels() -> No
     assert matches["103"]["institution"] == "Brigham and Women's Hospital"
     assert "affiliation contains institution" in matches["103"]["label"]
     assert "102" not in matches
+
+
+def test_extract_expanded_search_matches_parses_profiles() -> None:
+    payload = {
+        "expanded-result": [
+            {
+                "orcid-id": "https://orcid.org/0000-0002-1825-0097",
+                "given-names": "Jeffrey",
+                "family-names": "Rice",
+                "institution-name": "NIH",
+                "country": "US",
+            },
+            {
+                "orcid-id": "0000-0002-1825-0097",  # duplicate should dedupe
+                "given-names": "Jeff",
+                "family-names": "Rice",
+            },
+        ]
+    }
+
+    matches = _extract_expanded_search_matches(payload)
+
+    assert len(matches) == 1
+    assert matches[0]["orcid"] == "0000-0002-1825-0097"
+    assert matches[0]["display_name"] == "Jeffrey Rice"
+    assert matches[0]["institution"] == "NIH"
+    assert matches[0]["country"] == "US"
+
+
+def test_extract_expanded_search_matches_handles_list_institutions() -> None:
+    payload = {
+        "expanded-result": [
+            {
+                "orcid-id": "0000-0002-1825-0097",
+                "given-names": "Peter",
+                "family-names": "Sage",
+                "institution-name": ["Brigham and Women's Hospital", "Harvard Medical School"],
+            }
+        ]
+    }
+
+    matches = _extract_expanded_search_matches(payload)
+
+    assert len(matches) == 1
+    assert matches[0]["institution"] == "Brigham and Women's Hospital; Harvard Medical School"
+
+
+def test_extract_basic_search_matches_parses_orcid_identifier() -> None:
+    payload = {
+        "result": [
+            {"orcid-identifier": {"path": "0000-0002-1825-0097"}},
+            {"orcid-identifier": {"uri": "https://orcid.org/0000-0002-1825-0098"}},
+        ]
+    }
+
+    matches = _extract_basic_search_matches(payload)
+
+    assert [row["orcid"] for row in matches] == ["0000-0002-1825-0097", "0000-0002-1825-0098"]
+
+
+def test_search_profiles_falls_back_to_basic_search_when_expanded_empty() -> None:
+    class FakeOrcidClient(OrcidClient):
+        def _search_payload(self, *, path: str, query: str, rows: int, headers: dict[str, str]) -> dict[str, object]:
+            _ = query
+            _ = rows
+            _ = headers
+            if path == "/expanded-search":
+                return {"expanded-result": []}
+            return {"result": [{"orcid-identifier": {"path": "0000-0002-1825-0097"}}]}
+
+    client = FakeOrcidClient(client_id="", client_secret="")
+    matches = client.search_profiles("Jeffrey Rice", limit=5)
+
+    assert len(matches) == 1
+    assert matches[0]["orcid"] == "0000-0002-1825-0097"
+
+
+def test_build_profile_search_queries_prioritizes_fielded_name_queries() -> None:
+    queries = _build_profile_search_queries("Peter Sage")
+
+    assert queries
+    assert queries[0] == 'given-and-family-names:"peter sage"'
+    assert "family-name:sage AND given-names:peter*" in queries
+    assert queries[-1] == "Peter Sage"
+
+
+def test_build_profile_search_queries_supports_initials_format() -> None:
+    queries = _build_profile_search_queries("Rice JS")
+
+    assert "family-name:rice AND given-names:j*" in queries
+    assert "family-name:rice" in queries
+
+
+def test_search_profiles_uses_multiple_queries_and_dedupes() -> None:
+    called: list[tuple[str, str]] = []
+
+    class FakeOrcidClient(OrcidClient):
+        def _search_payload(self, *, path: str, query: str, rows: int, headers: dict[str, str]) -> dict[str, object]:
+            _ = rows
+            _ = headers
+            called.append((path, query))
+            if path == "/expanded-search":
+                if query == 'given-and-family-names:"peter sage"':
+                    return {"expanded-result": [{"orcid-id": "0000-0002-7287-0326", "given-names": "Peter", "family-names": "Sage"}]}
+                if query == "family-name:sage AND given-names:peter*":
+                    return {"expanded-result": [{"orcid-id": "0000-0002-7287-0326", "given-names": "Peter", "family-names": "Sage"}]}
+                return {"expanded-result": []}
+            return {"result": []}
+
+    client = FakeOrcidClient(client_id="", client_secret="")
+    matches = client.search_profiles("Peter Sage", limit=10)
+
+    assert [match["orcid"] for match in matches] == ["0000-0002-7287-0326"]
+    assert called
+    assert called[0] == ("/expanded-search", 'given-and-family-names:"peter sage"')

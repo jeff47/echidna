@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from app.logic import _extract_institution_names, _institution_key, normalize_text
+from app.logic import _extract_institution_names, _institution_key, normalize_orcid, normalize_text, parse_target_name
 from app.models import Citation
 
 DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
@@ -94,6 +94,49 @@ class OrcidClient:
             matches_by_pmid[pmid] = match
         return matches_by_pmid
 
+    def search_profiles(self, author_name: str, limit: int = 12) -> list[dict[str, str]]:
+        query = author_name.strip()
+        if not query:
+            return []
+
+        rows = max(1, min(limit, 50))
+        headers = {"Accept": "application/json"}
+        token = self._optional_access_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        search_queries = _build_profile_search_queries(query)
+        deduped: list[dict[str, str]] = []
+        seen_orcids: set[str] = set()
+
+        for candidate_query in search_queries:
+            expanded_payload = self._search_payload(path="/expanded-search", query=candidate_query, rows=rows, headers=headers)
+            expanded_matches = _extract_expanded_search_matches(expanded_payload)
+            for match in expanded_matches:
+                orcid = match.get("orcid", "")
+                if not orcid or orcid in seen_orcids:
+                    continue
+                seen_orcids.add(orcid)
+                deduped.append(match)
+                if len(deduped) >= rows:
+                    return deduped[:rows]
+
+        if deduped:
+            return deduped[:rows]
+
+        for candidate_query in search_queries:
+            basic_payload = self._search_payload(path="/search", query=candidate_query, rows=rows, headers=headers)
+            basic_matches = _extract_basic_search_matches(basic_payload)
+            for match in basic_matches:
+                orcid = match.get("orcid", "")
+                if not orcid or orcid in seen_orcids:
+                    continue
+                seen_orcids.add(orcid)
+                deduped.append(match)
+                if len(deduped) >= rows:
+                    return deduped[:rows]
+        return deduped[:rows]
+
     def fetch_work_identifiers(self, target_orcid: str) -> dict[str, set[str]]:
         if not self.is_configured:
             raise RuntimeError("ORCiD API client credentials are not configured")
@@ -165,6 +208,29 @@ class OrcidClient:
         self._token_expires_at = now + max(expires_in, 60)
         return token
 
+    def _optional_access_token(self) -> str:
+        if not self.is_configured:
+            return ""
+        try:
+            return self._get_access_token()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _search_payload(self, *, path: str, query: str, rows: int, headers: dict[str, str]) -> dict[str, Any]:
+        url = f"{self.api_base_url}{path}"
+        params = {
+            "q": query,
+            "start": "0",
+            "rows": str(rows),
+        }
+        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+            response = client.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
 
 def _extract_work_identifiers(payload: dict[str, Any]) -> dict[str, set[str]]:
     identifiers: dict[str, set[str]] = {
@@ -223,6 +289,148 @@ def _collect_external_ids(external_ids_node: Any, identifiers: dict[str, set[str
                 identifiers["pmcid"].add(normalized)
             continue
 
+
+
+def _extract_expanded_search_matches(payload: dict[str, Any]) -> list[dict[str, str]]:
+    raw_results = payload.get("expanded-result", [])
+    if not isinstance(raw_results, list):
+        return []
+
+    matches: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        orcid = _extract_orcid_from_node(item.get("orcid-id")) or _extract_orcid_from_node(item.get("orcid-identifier"))
+        if not orcid or orcid in seen:
+            continue
+        seen.add(orcid)
+
+        given = str(item.get("given-names", "")).strip()
+        family = str(item.get("family-names", "")).strip()
+        credit = str(item.get("credit-name", "")).strip()
+        display_name = " ".join(part for part in (given, family) if part).strip() or credit
+
+        institution = _expanded_institution_text(item.get("institution-name")) or _expanded_institution_text(
+            item.get("current-institution-affiliation-name")
+        )
+        country = str(item.get("country", "")).strip()
+        matches.append(
+            {
+                "orcid": orcid,
+                "display_name": display_name,
+                "institution": institution,
+                "country": country,
+                "record_url": f"https://orcid.org/{orcid}",
+            }
+        )
+    return matches
+
+
+def _extract_basic_search_matches(payload: dict[str, Any]) -> list[dict[str, str]]:
+    raw_results = payload.get("result", [])
+    if not isinstance(raw_results, list):
+        return []
+
+    matches: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        orcid = _extract_orcid_from_node(item.get("orcid-identifier")) or _extract_orcid_from_node(item.get("orcid-id"))
+        if not orcid or orcid in seen:
+            continue
+        seen.add(orcid)
+        matches.append(
+            {
+                "orcid": orcid,
+                "display_name": "",
+                "institution": "",
+                "country": "",
+                "record_url": f"https://orcid.org/{orcid}",
+            }
+        )
+    return matches
+
+
+def _extract_orcid_from_node(node: Any) -> str:
+    if isinstance(node, dict):
+        path_value = str(node.get("path", "")).strip()
+        if path_value:
+            normalized = normalize_orcid(path_value)
+            if normalized:
+                return normalized
+        uri_value = str(node.get("uri", "")).strip()
+        if uri_value:
+            normalized = normalize_orcid(uri_value)
+            if normalized:
+                return normalized
+        return ""
+    if isinstance(node, str):
+        return normalize_orcid(node)
+    return ""
+
+
+def _expanded_institution_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = [str(part).strip() for part in value if str(part).strip()]
+        return "; ".join(parts)
+    return ""
+
+
+def _build_profile_search_queries(author_name: str) -> list[str]:
+    raw = author_name.strip()
+    if not raw:
+        return []
+
+    queries: list[str] = []
+    try:
+        target = parse_target_name(raw)
+    except ValueError:
+        target = None
+
+    if target is not None:
+        surname = _orcid_query_term(target.surname)
+        given = _orcid_query_term(target.given.split()[0] if target.given else "")
+        first_initial = _orcid_query_term(target.initials[:1] if target.initials else "")
+        if surname and given:
+            queries.append(f'given-and-family-names:"{given} {surname}"')
+            queries.append(f"family-name:{surname} AND given-names:{given}*")
+        if surname and first_initial:
+            queries.append(f"family-name:{surname} AND given-names:{first_initial}*")
+        if surname:
+            queries.append(f"family-name:{surname}")
+
+    escaped_raw = _orcid_query_phrase(raw)
+    if escaped_raw:
+        queries.append(f'given-and-family-names:"{escaped_raw}"')
+        queries.append(f'credit-name:"{escaped_raw}"')
+        queries.append(raw)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        normalized = " ".join(query.split())
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(normalized)
+    return deduped
+
+
+def _orcid_query_term(value: str) -> str:
+    token = normalize_text(value).replace(" ", "")
+    return re.sub(r"[^a-z0-9]", "", token)
+
+
+def _orcid_query_phrase(value: str) -> str:
+    phrase = " ".join(value.split()).strip()
+    return phrase.replace('"', "")
 
 def _extract_affiliation_organizations(payload: dict[str, Any]) -> list[OrcidOrganization]:
     organizations: list[OrcidOrganization] = []
