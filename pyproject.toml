@@ -28,3 +28,15 @@ testpaths = ["tests"]
 
 [tool.setuptools]
 packages = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = [
+  "fastapi",
+  "fastapi.*",
+  "openpyxl",
+  "openpyxl.*",
+]
+ignore_missing_imports = true

@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -91,6 +91,13 @@ def _year_window_label(start_year: int | None, end_year: int | None) -> str:
     if start_year is None or end_year is None:
         return "all years"
     return f"{start_year}-{end_year}"
+
+
+def _dict_row_sort_key(row: dict[str, object]) -> tuple[bool, int, str]:
+    year_value = row.get("year")
+    year = year_value if isinstance(year_value, int) else None
+    pmid = str(row.get("pmid", ""))
+    return (year is None, -(year or 0), pmid)
 
 
 def _default_correction_mode(row: Any) -> str:
@@ -402,18 +409,25 @@ def _build_citation_selection_rows(
                 "notes": set(citation.notes),
             },
         )
-        row["cluster_labels"].add(cluster_label_by_id.get(match.cluster_id, match.cluster_id))
+        cluster_labels = cast(set[str], row["cluster_labels"])
+        cluster_labels.add(cluster_label_by_id.get(match.cluster_id, match.cluster_id))
+        affiliations = cast(set[str], row["affiliations"])
         affiliation = (match.author.affiliation or "").strip()
         if affiliation:
-            row["affiliations"].add(affiliation)
-        row["positions"].add(match.position)
+            affiliations.add(affiliation)
+        positions = cast(set[int], row["positions"])
+        positions.add(match.position)
 
     rendered: list[dict[str, object]] = []
     for row in by_pmid.values():
         pmid = str(row["pmid"])
         all_positions = all_positions_by_pmid.get(pmid, set())
         all_methods = all_methods_by_pmid.get(pmid, set())
-        has_no_affiliation = not bool(row["affiliations"])
+        row_affiliations = cast(set[str], row["affiliations"])
+        row_cluster_labels = cast(set[str], row["cluster_labels"])
+        row_positions = cast(set[int], row["positions"])
+        row_notes = cast(set[str], row["notes"])
+        has_no_affiliation = not bool(row_affiliations)
         has_multiple_matches = len(all_positions) > 1
         has_initials_match = "initials" in all_methods
         review_reasons: list[str] = []
@@ -434,17 +448,17 @@ def _build_citation_selection_rows(
                 "title": row["title"],
                 "source_for_roles": row["source_for_roles"],
                 "publication_types": row["publication_types"],
-                "cluster_labels": " | ".join(sorted(row["cluster_labels"])),
-                "affiliations": " | ".join(sorted(row["affiliations"])) if row["affiliations"] else "(no affiliation listed)",
-                "authors_html": _to_author_list_html(citation_by_pmid[pmid], set(row["positions"])),
-                "notes": "; ".join(sorted(row["notes"])),
+                "cluster_labels": " | ".join(sorted(row_cluster_labels)),
+                "affiliations": " | ".join(sorted(row_affiliations)) if row_affiliations else "(no affiliation listed)",
+                "authors_html": _to_author_list_html(citation_by_pmid[pmid], set(row_positions)),
+                "notes": "; ".join(sorted(row_notes)),
                 "needs_review": bool(review_reasons),
                 "review_reason": "; ".join(review_reasons),
-                "in_window": bool(citation_in_window(citation_by_pmid[row["pmid"]], start_year, end_year)),
+                "in_window": bool(citation_in_window(citation_by_pmid[pmid], start_year, end_year)),
             }
         )
 
-    rendered.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    rendered.sort(key=_dict_row_sort_key)
     return rendered
 
 
@@ -475,7 +489,7 @@ def _build_cluster_citation_rows(
     rendered: dict[str, list[dict[str, object]]] = {}
     for cluster_id, rows_by_pmid in by_cluster.items():
         rows = list(rows_by_pmid.values())
-        rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+        rows.sort(key=_dict_row_sort_key)
         rendered[cluster_id] = rows
     return rendered
 
@@ -539,7 +553,7 @@ def _build_out_of_window_rows(
                 "title": citation.title,
             }
         )
-    rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    rows.sort(key=_dict_row_sort_key)
     return rows
 
 
@@ -571,7 +585,7 @@ def _build_excluded_citation_rows(
                 "reason": excluded_reasons.get(citation.pmid, "Excluded by pre-disambiguation filter"),
             }
         )
-    rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    rows.sort(key=_dict_row_sort_key)
     return rows
 
 
@@ -1020,26 +1034,26 @@ def disambiguate(
     cluster_citation_rows = _build_cluster_citation_rows(citations=disambiguation_citations, matches=eligible_matches)
     missing_affiliation_rows: list[dict[str, object]] = []
     for match in eligible_matches:
-        citation = citation_by_pmid.get(match.pmid)
-        if citation is None:
+        matched_citation = citation_by_pmid.get(match.pmid)
+        if matched_citation is None:
             continue
         affiliation = match.author.affiliation or ""
-        reason = _missing_affiliation_reason(citation, affiliation)
-        row = {
+        reason = _missing_affiliation_reason(matched_citation, affiliation)
+        row: dict[str, object] = {
             "cluster_label": cluster_label_by_id.get(match.cluster_id, match.cluster_id),
-            "pmid": citation.pmid,
-            "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{citation.pmid}/",
-            "pmcid": citation.pmcid,
-            "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{citation.pmcid}/" if citation.pmcid else None,
-            "year": citation.print_year,
-            "source_for_roles": citation.source_for_roles,
+            "pmid": matched_citation.pmid,
+            "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{matched_citation.pmid}/",
+            "pmcid": matched_citation.pmcid,
+            "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{matched_citation.pmcid}/" if matched_citation.pmcid else None,
+            "year": matched_citation.print_year,
+            "source_for_roles": matched_citation.source_for_roles,
             "affiliation": affiliation or "(no affiliation listed)",
             "missing_reason": reason,
-            "notes": "; ".join(citation.notes),
+            "notes": "; ".join(matched_citation.notes),
         }
         if reason:
             missing_affiliation_rows.append(row)
-    missing_affiliation_rows.sort(key=lambda row: (row["year"] is None, -(row["year"] or 0), str(row["pmid"])))
+    missing_affiliation_rows.sort(key=_dict_row_sort_key)
     excluded_citation_rows = _build_excluded_citation_rows(
         citations=citations,
         excluded_pmids=excluded_pmids,

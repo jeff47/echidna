@@ -83,7 +83,8 @@ logger = logging.getLogger(__name__)
 class NcbiClient:
     def __init__(self, timeout: float = 30.0, api_key: str | None = None, max_retries: int = 4) -> None:
         self.timeout = timeout
-        self.api_key = (api_key or os.getenv("NCBI_API_KEY", "")).strip() or None
+        configured_api_key = api_key if api_key is not None else os.getenv("NCBI_API_KEY", "")
+        self.api_key = configured_api_key.strip() or None
         self.email = os.getenv("NCBI_EMAIL", "").strip() or None
         self.tool = os.getenv("NCBI_TOOL", "ECHIDNA").strip() or "ECHIDNA"
         self.max_retries = max_retries
@@ -449,9 +450,9 @@ def _find_authors(article: ET.Element) -> list[Author]:
     shared_affiliations = author_level_affiliations | article_affiliations
     if len(shared_affiliations) == 1:
         only_affiliation = next(iter(shared_affiliations))
-        for author in authors:
-            if not author.affiliation.strip():
-                author.affiliation = only_affiliation
+        for parsed_author in authors:
+            if not parsed_author.affiliation.strip():
+                parsed_author.affiliation = only_affiliation
     return authors
 
 

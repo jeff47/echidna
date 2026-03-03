@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Literal
 
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, TargetName
 
@@ -232,7 +233,9 @@ def is_review_article(citation: Citation) -> bool:
     return False
 
 
-def match_author(author: Author, target: TargetName, target_orcid: str = "") -> tuple[bool, str | None]:
+def match_author(
+    author: Author, target: TargetName, target_orcid: str = ""
+) -> tuple[bool, Literal["orcid", "given", "initials"] | None]:
     if target_orcid:
         author_orcid = normalize_orcid(author.orcid)
         if author_orcid:

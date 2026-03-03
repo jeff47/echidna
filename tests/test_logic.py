@@ -1,4 +1,5 @@
 import pytest
+from typing import Literal
 
 from app.logic import (
     analyze_citations,
@@ -19,7 +20,7 @@ def _citation(
     year: int,
     authors: list[Author],
     *,
-    source: str = "pmc",
+    source: Literal["pmc", "pubmed"] = "pmc",
     co_first: set[int] | None = None,
     co_senior: set[int] | None = None,
     publication_types: list[str] | None = None,
