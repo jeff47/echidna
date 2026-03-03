@@ -36,7 +36,6 @@ Open `http://127.0.0.1:8000`.
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.
 - Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/echidna-runs` and can be overridden with `ECHIDNA_RUNS_DIR`.
-- Backward compatibility is preserved for `PMCPARSER_LOG_LEVEL` and `PMCPARSER_RUNS_DIR`.
 
 ## Test
 

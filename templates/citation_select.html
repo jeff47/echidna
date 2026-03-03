@@ -15,6 +15,7 @@
     .warn { background: #fff4f2; }
     .outwindow { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
+    .orcid-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem; margin-left: 0.3rem; border-radius: 999px; background: #a7f3d0; color: #065f46; font-size: 0.72rem; font-weight: 700; line-height: 1; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .toolbar { margin-top: 0.75rem; display: flex; gap: 1rem; align-items: center; }
   </style>
@@ -23,10 +24,13 @@
 <main>
   <div class="card">
     <h1>Step 2: Citation Selection</h1>
-    <p>Author: <strong>{{ author_name }}</strong> | Window: {{ year_window_label }}</p>
+    <p>Author: <strong>{{ author_name }}</strong>{% if target_orcid %} | ORCID: <strong>{{ target_orcid }}</strong>{% endif %} | Window: {{ year_window_label }}</p>
     <p class="muted">Only citations requiring manual review are shown below.</p>
     {% if auto_included_pmids %}
       <p class="muted">{{ auto_included_pmids|length }} citation(s) were auto-included and are not shown.</p>
+    {% endif %}
+    {% if orcid_sync_error %}
+      <p class="muted">{{ orcid_sync_error }}</p>
     {% endif %}
 
     <form method="post" action="/analyze">
@@ -74,7 +78,7 @@
               <td>{{ row.journal }}</td>
               <td>{{ row.title }}</td>
               <td>
-                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_verified %}<a class="orcid-badge" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="ORCiD matched by {{ row.orcid_match_label }}">iD</a>{% endif %}
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
               </td>
               <td>{{ row.authors_html|safe }}</td>
