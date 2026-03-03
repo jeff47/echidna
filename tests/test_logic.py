@@ -2,6 +2,7 @@ import pytest
 from typing import Literal
 
 from app.logic import (
+    affiliation_fingerprint,
     analyze_citations,
     build_clusters,
     citation_in_window,
@@ -258,7 +259,7 @@ def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
                     "Sage",
                     "Peter T.",
                     "PT",
-                    "Transplant Research Center, Renal Division, Brigham and Women's Hospital, Harvard Medical School, Boston, MA USA",
+                    "Transplant Research Center, Renal Division, Brigham & Women's Hospital, Harvard Medical School, Boston, MA USA",
                 )
             ],
         ),
@@ -269,6 +270,17 @@ def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
     assert "Brigham and Women's Hospital" in clusters[0].affiliations
     assert "Harvard Medical School" in clusters[0].affiliations
     assert len(clusters[0].affiliations) <= 3
+    assert not any("&" in label for label in clusters[0].affiliations)
+
+
+def test_affiliation_fingerprint_collapses_ampersand_and_apostrophe_variants() -> None:
+    left = affiliation_fingerprint(
+        "Transplantation Research Center, Renal Division, Brigham & Women's Hospital, Harvard Medical School, Boston, MA, USA"
+    )
+    right = affiliation_fingerprint(
+        "Transplantation Research Center, Renal Division, Brigham and Women`s Hospital, Harvard Medical School, Boston, MA USA"
+    )
+    assert left == right
 
 
 def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:

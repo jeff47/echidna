@@ -31,6 +31,8 @@ UNIT_PREFIX_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 TRAILING_PUNCT = re.compile(r"[.;,\s]+$")
+AMPERSAND = re.compile(r"\s*&\s*")
+APOSTROPHE_VARIANTS = re.compile(r"[’`´]")
 INSTITUTION_HINTS = (
     "university",
     "hospital",
@@ -276,9 +278,10 @@ def match_author(
 
 def affiliation_fingerprint(affiliation: str) -> str:
     institutions = _extract_institution_names(affiliation)
-    if not institutions:
+    keys = sorted({_institution_key(name) for name in institutions if _institution_key(name)})
+    if not keys:
         return "no-affiliation"
-    return "|".join(normalize_text(name) for name in institutions)[:120]
+    return "|".join(keys)[:120]
 
 
 def _extract_institution_names(affiliation: str) -> list[str]:
@@ -303,11 +306,12 @@ def _institution_candidates(piece: str) -> list[tuple[int, str, str]]:
     clauses = [clause.strip() for clause in piece.split(",") if clause.strip()]
     candidates: list[tuple[int, str, str]] = []
     for clause in clauses:
-        display = _clean_clause_label(clause)
+        display = _normalize_institution_label(clause)
         normalized = normalize_text(display)
         if not normalized:
             continue
-        if UNIT_PREFIX_PATTERN.match(normalized):
+        key = _institution_key(display)
+        if not key or UNIT_PREFIX_PATTERN.match(normalized):
             continue
         score = 0
         if any(hint in normalized for hint in INSTITUTION_HINTS):
@@ -318,12 +322,25 @@ def _institution_candidates(piece: str) -> list[tuple[int, str, str]]:
             score -= 2
         if score <= 0:
             continue
-        candidates.append((score, normalized, display))
+        candidates.append((score, key, display))
     return candidates
+
+
+def _institution_key(value: str) -> str:
+    normalized = normalize_text(value)
+    normalized = AMPERSAND.sub(" and ", normalized)
+    normalized = APOSTROPHE_VARIANTS.sub("'", normalized)
+    return normalize_token(normalized)
 
 
 def _clean_clause_label(clause: str) -> str:
     return TRAILING_PUNCT.sub("", " ".join(clause.split()))
+
+
+def _normalize_institution_label(clause: str) -> str:
+    cleaned = APOSTROPHE_VARIANTS.sub("'", clause)
+    cleaned = AMPERSAND.sub(" and ", cleaned)
+    return _clean_clause_label(cleaned)
 
 
 def build_clusters(
@@ -399,16 +416,15 @@ def build_clusters(
 
 def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
     seen: set[str] = set()
-    labels: list[str] = []
+    labels: dict[str, str] = {}
     for match in matches:
         for name in _extract_institution_names(match.author.affiliation):
-            key = normalize_text(name)
+            key = _institution_key(name)
             if not key or key in seen:
                 continue
             seen.add(key)
-            labels.append(name)
-    labels.sort(key=str.lower)
-    return labels
+            labels[key] = _normalize_institution_label(name)
+    return sorted(labels.values(), key=str.lower)
 
 
 def citation_in_window(citation: Citation, start_year: int | None, end_year: int | None) -> bool:
