@@ -298,6 +298,55 @@ def test_replace_authors_from_pmc_prefers_pmc_author_list() -> None:
     assert citation.authors[0].affiliation == "Institute A"
 
 
+def test_fill_missing_affiliations_from_pubmed_after_pmc_replace() -> None:
+    client = NcbiClient()
+    citation = Citation(
+        pmid="3",
+        pmcid="PMC3",
+        title="x",
+        journal="y",
+        print_year=2024,
+        print_date="2024",
+        authors=[
+            _author(1, "O'Connor", "Kevin C.", "KC", ""),
+            _author(2, "Smith", "Amy", "A", ""),
+        ],
+        source_for_roles="pmc",
+    )
+    pubmed_authors = [
+        _author(1, "O'Connor", "Kevin C", "KC", "Department of Neurology, Example University"),
+        _author(2, "Smith", "Amy", "A", ""),
+    ]
+
+    filled = client._fill_missing_affiliations_from_pubmed(citation, pubmed_authors)
+
+    assert filled == 1
+    assert citation.authors[0].affiliation == "Department of Neurology, Example University"
+    assert citation.authors[1].affiliation == ""
+
+
+def test_fill_missing_affiliations_from_pubmed_skips_name_mismatch() -> None:
+    client = NcbiClient()
+    citation = Citation(
+        pmid="4",
+        pmcid="PMC4",
+        title="x",
+        journal="y",
+        print_year=2024,
+        print_date="2024",
+        authors=[_author(1, "O'Connor", "Kevin", "K", "")],
+        source_for_roles="pmc",
+    )
+    pubmed_authors = [
+        _author(1, "Smith", "Amy", "A", "Department of Neurology, Example University"),
+    ]
+
+    filled = client._fill_missing_affiliations_from_pubmed(citation, pubmed_authors)
+
+    assert filled == 0
+    assert citation.authors[0].affiliation == ""
+
+
 def test_extract_contrib_affiliation_handles_multi_rid_and_labels() -> None:
     xml = """
     <article>

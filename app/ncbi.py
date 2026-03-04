@@ -79,6 +79,7 @@ AFFILIATION_FOOTNOTE_TARGET_WORDS = (
 )
 SUPERSCRIPT_TRANSLATION = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉", "01234567890123456789")
 DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
+PERSON_TOKEN = re.compile(r"[^a-z0-9]+")
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ class NcbiClient:
                 logger.debug("PMID %s has no PMCID mapping", citation.pmid)
                 continue
             try:
+                pubmed_authors = list(citation.authors)
                 pmc_xml = self._fetch_pmc_xml(citation.pmcid)
                 pmc_doi = _extract_pmc_article_doi(pmc_xml)
                 if pmc_doi and not citation.doi:
@@ -138,7 +140,9 @@ class NcbiClient:
                 used_pmc_authors = self._replace_authors_from_pmc(citation, pmc_authors)
                 if used_pmc_authors:
                     citation.notes.append("Author metadata sourced from PMC")
-                    filled = 0
+                    filled = self._fill_missing_affiliations_from_pubmed(citation, pubmed_authors)
+                    if filled:
+                        citation.notes.append(f"Filled {filled} affiliation(s) from PubMed fallback")
                 else:
                     pmc_affiliations = {
                         author.position: author.affiliation for author in pmc_authors if author.affiliation.strip()
@@ -446,6 +450,23 @@ class NcbiClient:
             return False
         citation.authors = pmc_authors
         return True
+
+    def _fill_missing_affiliations_from_pubmed(self, citation: Citation, pubmed_authors: list[Author]) -> int:
+        by_position: dict[int, Author] = {
+            author.position: author for author in pubmed_authors if author.affiliation.strip()
+        }
+        filled = 0
+        for author in citation.authors:
+            if author.affiliation.strip():
+                continue
+            source = by_position.get(author.position)
+            if source is None:
+                continue
+            if not _authors_likely_same_person(author, source):
+                continue
+            author.affiliation = source.affiliation
+            filled += 1
+        return filled
 
 
 def _find_text(node: ET.Element, path: str) -> str:
@@ -768,6 +789,22 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 
 def _clean_text(value: str) -> str:
     return " ".join(value.split())
+
+
+def _person_token(value: str) -> str:
+    return PERSON_TOKEN.sub("", value.lower())
+
+
+def _authors_likely_same_person(left: Author, right: Author) -> bool:
+    left_last = _person_token(left.last_name)
+    right_last = _person_token(right.last_name)
+    if left_last and right_last and left_last != right_last:
+        return False
+    left_initials = (_person_token(left.initials) or _person_token(_initials_from_name(left.fore_name)))[:1]
+    right_initials = (_person_token(right.initials) or _person_token(_initials_from_name(right.fore_name)))[:1]
+    if left_initials and right_initials and left_initials != right_initials:
+        return False
+    return True
 
 
 def _normalize_affiliation_text(value: str) -> str:

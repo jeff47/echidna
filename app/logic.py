@@ -473,8 +473,20 @@ def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
     seen: set[str] = set()
     labels: dict[str, str] = {}
     for match in matches:
-        for name in _extract_institution_names(match.author.affiliation):
+        raw_affiliation = (match.author.affiliation or "").strip()
+        if not raw_affiliation:
+            continue
+        names = _extract_institution_names(raw_affiliation)
+        if not names:
+            names = [
+                _normalize_institution_label(part)
+                for part in raw_affiliation.split(";")
+                if _normalize_institution_label(part)
+            ]
+        for name in names:
             key = _institution_key(name)
+            if not key:
+                key = normalize_token(name)
             if not key or key in seen:
                 continue
             seen.add(key)

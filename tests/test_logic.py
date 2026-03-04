@@ -283,6 +283,43 @@ def test_affiliation_fingerprint_collapses_ampersand_and_apostrophe_variants() -
     assert left == right
 
 
+def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
+    target = parse_target_name("Kevin O'Connor")
+    citations = [
+        _citation(
+            "401",
+            2024,
+            [
+                _author(
+                    1,
+                    "O'Connor",
+                    "Kevin",
+                    "K",
+                    "Bioplastech Ltd., Dublin, Ireland.",
+                )
+            ],
+        ),
+        _citation(
+            "402",
+            2025,
+            [
+                _author(
+                    1,
+                    "O'Connor",
+                    "Kevin C.",
+                    "KC",
+                    "Department of Neurology Yale University School of Medicine New Haven Connecticut 06520 USA",
+                )
+            ],
+        ),
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
+    assert "Bioplastech Ltd., Dublin, Ireland" in labels
+    assert "Department of Neurology Yale University School of Medicine New Haven Connecticut 06520 USA" in labels
+
+
 def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:
     target = parse_target_name("Jeffrey Rice")
     matched, method = match_author(
