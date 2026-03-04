@@ -11,6 +11,7 @@ COPY pyproject.toml README.md /app/
 COPY app /app/app
 COPY templates /app/templates
 COPY echidna.jpg /app/echidna.jpg
+COPY favicon.ico /app/favicon.ico
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .

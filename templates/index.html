@@ -489,13 +489,9 @@
         <label for="pmid_file">PMID File (optional)</label>
         <input id="pmid_file" name="pmid_file" type="file" accept=".txt,text/plain">
 
-        <label class="checkbox-row">
-          <input type="checkbox" name="peer_reviewed_only" value="1" {% if peer_reviewed_only %}checked{% endif %}>
-          Peer-reviewed only
-        </label>
         <input type="hidden" name="default_excluded_types_present" value="1">
         <details class="excluded-types-panel">
-          <summary>Default publication types to exclude (checked by default)</summary>
+          <summary>Publication types to exclude (non-peer reviewed excluded by default)</summary>
           <div class="excluded-type-grid">
             {% for type_term in default_excluded_type_options %}
               <label class="checkbox-row excluded-type-option">
@@ -504,15 +500,14 @@
               </label>
             {% endfor %}
           </div>
+          <label for="extra_excluded_types" class="inline-label">
+            Extra Publication Types To Ignore (optional)
+            <a href="https://www.nlm.nih.gov/mesh/pubtypes.html" target="_blank" rel="noopener">Publication type
+              reference</a>
+          </label>
+          <input id="extra_excluded_types" name="extra_excluded_types" value="{{ extra_excluded_types }}"
+            placeholder="e.g. case reports, congresses">
         </details>
-
-        <label for="extra_excluded_types" class="inline-label">
-          Extra Publication Types To Ignore (optional)
-          <a href="https://www.nlm.nih.gov/mesh/pubtypes.html" target="_blank" rel="noopener">Publication type
-            reference</a>
-        </label>
-        <input id="extra_excluded_types" name="extra_excluded_types" value="{{ extra_excluded_types }}"
-          placeholder="e.g. case reports, congresses">
 
         <button type="submit">Find Author Clusters</button>
       </form>
@@ -533,7 +528,7 @@
             </li>
             <li>Set year bounds, or check all-years to ignore the year filter.</li>
             <li>Paste PMIDs or upload a text file with one PMID per line.</li>
-            <li>Choose filtering options (peer-reviewed toggle, expandable default exclusion checklist, and optional extra publication types to ignore).</li>
+            <li>Adjust publication-type exclusions with the expandable checklist (checked by default) and optional extra publication types to ignore.</li>
             <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
           </ul>
           <div class="help-actions">
@@ -595,7 +590,6 @@
     const orcidSearchStatus = document.getElementById("orcid-search-status");
     const orcidSearchResults = document.getElementById("orcid-search-results");
     const orcidSearchResultsBody = document.getElementById("orcid-search-results-body");
-
     function clearOrcidSearchResults() {
       if (orcidSearchResultsBody) {
         orcidSearchResultsBody.innerHTML = "";

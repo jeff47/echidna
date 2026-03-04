@@ -431,7 +431,6 @@ def _run_state(author_name: str, start_year: int | None, end_year: int | None) -
         target_orcid="",
         start_year=start_year,
         end_year=end_year,
-        peer_reviewed_only=True,
         excluded_type_terms=[],
         citations=[],
         clusters=[],

@@ -53,7 +53,6 @@ class RunState:
     target_orcid: str
     start_year: int | None
     end_year: int | None
-    peer_reviewed_only: bool
     excluded_type_terms: list[str]
     citations: list[Citation]
     clusters: list[Cluster]
@@ -987,7 +986,6 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
         "target_orcid": run.target_orcid,
         "start_year": run.start_year,
         "end_year": run.end_year,
-        "peer_reviewed_only": run.peer_reviewed_only,
         "excluded_type_terms": list(run.excluded_type_terms),
         "citations": [_serialize_citation(citation) for citation in run.citations],
         "clusters": [_serialize_cluster(cluster) for cluster in run.clusters],
@@ -1008,7 +1006,6 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
         target_orcid=str(payload.get("target_orcid", "")),
         start_year=(int(start_raw) if start_raw is not None else None),
         end_year=(int(end_raw) if end_raw is not None else None),
-        peer_reviewed_only=bool(payload.get("peer_reviewed_only", False)),
         excluded_type_terms=[str(v) for v in payload.get("excluded_type_terms", [])],
         citations=[_deserialize_citation(item) for item in payload.get("citations", [])],
         clusters=[_deserialize_cluster(item) for item in payload.get("clusters", [])],
@@ -1245,7 +1242,6 @@ def index(request: Request) -> HTMLResponse:
             "start_year": year - 5,
             "end_year": year,
             "pmids": "",
-            "peer_reviewed_only": True,
             "all_years": False,
             "extra_excluded_types": "",
             "default_excluded_type_options": default_excluded_type_options,
@@ -1301,16 +1297,14 @@ def disambiguate(
     start_year: int = Form(...),
     end_year: int = Form(...),
     all_years: str | None = Form(default=None),
-    peer_reviewed_only: str | None = Form(default=None),
     default_excluded_types: list[str] = Form(default=[]),
     default_excluded_types_present: str | None = Form(default=None),
     extra_excluded_types: str = Form(default=""),
 ) -> HTMLResponse:
     all_years_enabled = all_years is not None
-    peer_reviewed_only_enabled = peer_reviewed_only is not None
     default_excluded_type_options = default_excluded_type_terms()
-    if default_excluded_types_present is None and peer_reviewed_only_enabled:
-        # Backward compatibility for non-UI clients that only send peer_reviewed_only.
+    if default_excluded_types_present is None:
+        # Backward compatibility for clients that do not submit the checklist fields.
         selected_default_excluded_types = list(default_excluded_type_options)
     else:
         selected_default_excluded_types = _selected_default_excluded_type_terms(
@@ -1318,13 +1312,13 @@ def disambiguate(
         )
     excluded_type_terms = _dedupe_terms(selected_default_excluded_types + parse_type_terms(extra_excluded_types))
     logger.info(
-        "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, peer_reviewed_only=%s",
+        "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, excluded_type_terms=%d",
         author_name,
         author_orcid,
         start_year,
         end_year,
         all_years_enabled,
-        peer_reviewed_only_enabled,
+        len(excluded_type_terms),
     )
     try:
         target = parse_target_name(author_name)
@@ -1339,7 +1333,6 @@ def disambiguate(
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
-                "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
@@ -1364,7 +1357,6 @@ def disambiguate(
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
-                "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
@@ -1385,7 +1377,6 @@ def disambiguate(
                 "start_year": start_year,
                 "end_year": end_year,
                 "pmids": pmids,
-                "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
@@ -1487,7 +1478,7 @@ def disambiguate(
     }
     excluded_by_type = 0
     disambiguation_citations = in_window_citations
-    if peer_reviewed_only_enabled:
+    if excluded_type_terms:
         type_filtered: list[Citation] = []
         for citation in in_window_citations:
             is_excluded, matched_types = citation_matches_excluded_type(citation, excluded_type_terms)
@@ -1606,7 +1597,6 @@ def disambiguate(
             target_orcid=target_orcid,
             start_year=window_start,
             end_year=window_end,
-            peer_reviewed_only=peer_reviewed_only_enabled,
             excluded_type_terms=excluded_type_terms,
             citations=citations,
             clusters=clusters,
@@ -1641,7 +1631,6 @@ def disambiguate(
             "selected_excluded_pmids": [],
             "excluded_out_of_window": excluded_out_of_window,
             "excluded_by_type": excluded_by_type,
-            "peer_reviewed_only": peer_reviewed_only_enabled,
             "extra_excluded_types": extra_excluded_types,
             "orcid_sync_error": orcid_sync_error,
         },
