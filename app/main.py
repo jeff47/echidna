@@ -240,6 +240,12 @@ def _counted_as_category(row: Any) -> str:
     return "1st/Sr author" if (row.counted_first or row.counted_senior) else "coauthor"
 
 
+def _counted_mode_from_flags(row: Any) -> str:
+    if row.is_review:
+        return "first_senior_review" if (row.counted_senior or row.counted_review_senior) else "coauthor_review"
+    return "first_senior_author" if (row.counted_first or row.counted_senior) else "coauthor"
+
+
 def _apply_correction_mode(row: Any, mode: str) -> None:
     mode_aliases = {
         "overall": "coauthor",
@@ -309,7 +315,8 @@ def _with_row_render_fields(
     rows: list[dict[str, object]] = []
     for idx, row in enumerate(analysis.rows):
         counted_as = _counted_as_category(row)
-        counted_as_report = counted_as
+        counted_as_report = counted_as if row.include else "exclude"
+        counted_mode = _counted_mode_from_flags(row)
         notes = list(row.citation.notes) + list(row.uncertainty_reasons)
         if row.forced_include:
             notes.append("Forced include override from Step 1")
@@ -352,6 +359,7 @@ def _with_row_render_fields(
                 "counted_as": counted_as,
                 "counted_as_report": counted_as_report,
                 "correction_default": _default_correction_mode(row),
+                "correction_default_uncertain": counted_mode,
                 "role_source": row.citation.source_for_roles,
                 "notes": "; ".join(deduped_notes),
                 "include": row.include,
