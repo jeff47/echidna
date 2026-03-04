@@ -1,3 +1,6 @@
+import pytest
+
+import app.orcid as orcid_module
 from app.models import Author, Citation
 from app.orcid import (
     OrcidClient,
@@ -8,6 +11,7 @@ from app.orcid import (
     _extract_expanded_search_matches,
     _extract_work_identifiers,
 )
+import httpx
 
 
 def _citation(*, pmid: str, pmcid: str | None, doi: str | None) -> Citation:
@@ -282,3 +286,97 @@ def test_search_profiles_uses_multiple_queries_and_dedupes() -> None:
     assert [match["orcid"] for match in matches] == ["0000-0002-7287-0326"]
     assert called
     assert called[0] == ("/expanded-search", 'given-and-family-names:"peter sage"')
+
+
+def test_search_payload_retries_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def request(
+            self,
+            method: str,
+            url: str,
+            *,
+            headers: dict[str, str] | None = None,
+            params: dict[str, str] | None = None,
+            data: dict[str, str] | None = None,
+        ) -> httpx.Response:
+            _ = headers
+            _ = data
+            self.calls += 1
+            request = httpx.Request(method, url, params=params)
+            if self.calls == 1:
+                return httpx.Response(429, headers={"Retry-After": "0"}, request=request)
+            return httpx.Response(200, json={"expanded-result": []}, request=request)
+
+    fake_http_client = FakeClient()
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(orcid_module.httpx, "Client", lambda *args, **kwargs: fake_http_client)
+    monkeypatch.setattr(orcid_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    client = OrcidClient(client_id="", client_secret="")
+    monkeypatch.setattr(client, "_throttle", lambda: None)
+
+    payload = client._search_payload(path="/expanded-search", query="peter sage", rows=10, headers={})
+
+    assert payload == {"expanded-result": []}
+    assert fake_http_client.calls == 2
+    assert sleep_calls == [0.5]
+
+
+def test_get_access_token_retries_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def request(
+            self,
+            method: str,
+            url: str,
+            *,
+            headers: dict[str, str] | None = None,
+            params: dict[str, str] | None = None,
+            data: dict[str, str] | None = None,
+        ) -> httpx.Response:
+            _ = headers
+            _ = params
+            self.calls += 1
+            request = httpx.Request(method, url)
+            if self.calls == 1:
+                return httpx.Response(503, request=request)
+            assert data is not None
+            assert data.get("grant_type") == "client_credentials"
+            return httpx.Response(
+                200,
+                json={"access_token": "token-1", "expires_in": 3600},
+                request=request,
+            )
+
+    fake_http_client = FakeClient()
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(orcid_module.httpx, "Client", lambda *args, **kwargs: fake_http_client)
+    monkeypatch.setattr(orcid_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    client = OrcidClient(client_id="client-id", client_secret="client-secret")
+    monkeypatch.setattr(client, "_throttle", lambda: None)
+
+    token = client._get_access_token()
+
+    assert token == "token-1"
+    assert fake_http_client.calls == 2
+    assert sleep_calls == [0.6]

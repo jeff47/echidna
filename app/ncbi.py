@@ -5,16 +5,18 @@ import logging
 import os
 import re
 import time
-from typing import Iterable
+from typing import Any, Iterable
+from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 import httpx
 
-from app.logic import normalize_orcid, parse_year
+from app.logic import normalize_orcid, parse_target_name, parse_year
 from app.models import Author, Citation
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 IDCONV_URL = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
+LITSENSE_AUTHOR_URL = "https://www.ncbi.nlm.nih.gov/research/litsense-api/api/author/"
 XML_NS_ID = "{http://www.w3.org/XML/1998/namespace}id"
 
 EQUAL_PATTERNS = (
@@ -198,6 +200,69 @@ class NcbiClient:
         url = f"{EUTILS_BASE}/efetch.fcgi"
         response = self._request(url, params=params)
         return response.text
+
+    def fetch_litsense_pmids_by_query(self, *, seed_pmid: str, author_name: str, max_pages: int = 10) -> set[str]:
+        query = _build_litsense_author_query(seed_pmid=seed_pmid, author_name=author_name)
+        if not query:
+            return set()
+        encoded_query = quote(query, safe="")
+        url = f"{LITSENSE_AUTHOR_URL}?query={encoded_query}"
+        return self._fetch_litsense_pmids(max_pages=max_pages, initial_url=url)
+
+    def fetch_litsense_pmids_by_orcid(self, *, target_orcid: str, max_pages: int = 10) -> set[str]:
+        normalized = target_orcid.strip()
+        if not normalized:
+            return set()
+        return self._fetch_litsense_pmids(max_pages=max_pages, params={"orcid": normalized})
+
+    def _fetch_litsense_pmids(
+        self,
+        *,
+        max_pages: int,
+        params: dict[str, str] | None = None,
+        initial_url: str | None = None,
+    ) -> set[str]:
+        collected: set[str] = set()
+        current_url = initial_url or LITSENSE_AUTHOR_URL
+        current_params: dict[str, str] | None = None
+        if params:
+            current_params = {key: str(value) for key, value in params.items() if str(value).strip()}
+        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+            for _ in range(max_pages):
+                response: httpx.Response | None = None
+                for attempt in range(self.max_retries + 1):
+                    self._throttle()
+                    candidate = client.get(current_url, params=current_params)
+                    response = candidate
+                    if candidate.status_code in (429, 500, 502, 503, 504):
+                        if attempt >= self.max_retries:
+                            candidate.raise_for_status()
+                        delay_seconds = _retry_delay_seconds(candidate, attempt)
+                        logger.warning(
+                            "LitSense request retry: status=%d url=%s attempt=%d/%d wait=%.2fs",
+                            candidate.status_code,
+                            current_url,
+                            attempt + 1,
+                            self.max_retries + 1,
+                            delay_seconds,
+                        )
+                        time.sleep(delay_seconds)
+                        continue
+                    candidate.raise_for_status()
+                    break
+                if response is None:
+                    raise RuntimeError("LitSense request failed without response")
+                payload = response.json()
+                collected.update(_extract_litsense_pmids(payload))
+
+                if not isinstance(payload, dict):
+                    break
+                next_url = str(payload.get("next", "")).strip()
+                if not next_url:
+                    break
+                current_url = next_url
+                current_params = None
+        return collected
 
     def _request(self, url: str, params: dict[str, str]) -> httpx.Response:
         request_params = _augment_params(
@@ -916,3 +981,62 @@ def _idconv_records(payload: dict) -> list[dict]:
             return [r for r in nested if isinstance(r, dict)]
 
     return []
+
+
+def _build_litsense_author_query(*, seed_pmid: str, author_name: str) -> str:
+    seed = seed_pmid.strip()
+    if not seed:
+        return ""
+    try:
+        target = parse_target_name(author_name)
+    except ValueError:
+        fallback = author_name.strip()
+        return " ".join(part for part in (seed, fallback) if part)
+
+    surname = target.surname.strip()
+    first_initial = target.initials[:1].upper()
+    if not surname or not first_initial:
+        fallback = author_name.strip()
+        return " ".join(part for part in (seed, fallback) if part)
+    surname_formatted = f"{surname[:1].upper()}{surname[1:]}"
+    return f"{seed} {surname_formatted} {first_initial}"
+
+
+def _extract_litsense_pmids(payload: Any) -> set[str]:
+    pmids: set[str] = set()
+    _collect_litsense_pmids(payload, pmids)
+    return pmids
+
+
+def _collect_litsense_pmids(node: Any, out: set[str]) -> None:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            lowered = str(key).strip().lower()
+            if lowered in {"pmid", "pmids"}:
+                out.update(_coerce_litsense_pmids(value))
+            else:
+                _collect_litsense_pmids(value, out)
+        return
+    if isinstance(node, list):
+        for item in node:
+            _collect_litsense_pmids(item, out)
+
+
+def _coerce_litsense_pmids(value: Any) -> set[str]:
+    pmids: set[str] = set()
+    if isinstance(value, int):
+        if value > 0:
+            pmids.add(str(value))
+        return pmids
+    if isinstance(value, str):
+        for token in re.findall(r"\d+", value):
+            if token:
+                pmids.add(token)
+        return pmids
+    if isinstance(value, list):
+        for item in value:
+            pmids.update(_coerce_litsense_pmids(item))
+        return pmids
+    if isinstance(value, dict):
+        _collect_litsense_pmids(value, pmids)
+    return pmids

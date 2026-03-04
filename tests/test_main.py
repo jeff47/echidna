@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -6,7 +8,15 @@ from fastapi.testclient import TestClient
 
 from app.logic import AnalysisResult
 from app.main import app as fastapi_app
-from app.main import RunState, _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields, _with_row_render_fields, _xlsx_download_filename
+from app.main import (
+    RunState,
+    _build_citation_selection_rows,
+    _build_cluster_citation_rows,
+    _build_cluster_orcid_affiliation_matches,
+    _orcid_row_fields,
+    _with_row_render_fields,
+    _xlsx_download_filename,
+)
 from app.models import Author, AuthorMatch, Citation, ReportRow
 
 
@@ -234,6 +244,59 @@ def test_with_row_render_fields_skips_missing_orcid_note_when_identifier_check_u
     assert "No match from ORCiD" not in str(rows[0]["notes"])
 
 
+def test_with_row_render_fields_includes_source_badges() -> None:
+    citation = _citation("202")
+    citation.source_tags = {"user", "litsense"}
+    analysis = AnalysisResult(
+        rows=[
+            ReportRow(
+                citation=citation,
+                counted_overall=True,
+                counted_first=False,
+                counted_senior=False,
+                counted_review_senior=False,
+                is_review=False,
+                uncertainty_reasons=[],
+                include=True,
+                forced_include=False,
+                matched_positions={1},
+            )
+        ],
+        uncertain_indices=[],
+    )
+
+    rows = _with_row_render_fields(
+        analysis,
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={},
+        target_orcid="",
+        orcid_identifier_checked=False,
+    )
+
+    source_badges = cast(list[dict[str, object]], rows[0]["source_badges"])
+    labels = [str(item["label"]) for item in source_badges]
+    assert labels == ["user", "litsense"]
+
+
+def test_build_cluster_citation_rows_includes_source_badges() -> None:
+    citation = _citation("203")
+    citation.source_tags = {"litsense"}
+    match = AuthorMatch(
+        pmid="203",
+        position=1,
+        method="given",
+        author=citation.authors[0],
+        cluster_id="cluster-a",
+    )
+
+    rows = _build_cluster_citation_rows(citations=[citation], matches=[match])
+    cluster_rows = rows["cluster-a"]
+    source_badges = cast(list[dict[str, object]], cluster_rows[0]["source_badges"])
+    labels = [str(item["label"]) for item in source_badges]
+
+    assert labels == ["litsense"]
+
+
 def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) -> None:
     from app import main as main_module
 
@@ -259,6 +322,60 @@ def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) 
     payload = response.json()
     assert payload["author_name"] == "Jeffrey Rice"
     assert payload["matches"][0]["orcid"] == "0000-0002-1825-0097"
+
+
+def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as main_module
+
+    citation_111 = _citation("111")
+    citation_222 = _citation("222")
+    citation_by_pmid = {
+        "111": citation_111,
+        "222": citation_222,
+    }
+    fetch_batches: list[list[str]] = []
+    captured_run: dict[str, RunState] = {}
+
+    def fake_fetch_citations(pmids: list[str]) -> list[Citation]:
+        fetch_batches.append(list(pmids))
+        return [citation_by_pmid[pmid] for pmid in pmids if pmid in citation_by_pmid]
+
+    monkeypatch.setattr(main_module.client, "fetch_citations", fake_fetch_citations)
+    monkeypatch.setattr(
+        main_module.client,
+        "fetch_litsense_pmids_by_query",
+        lambda *, seed_pmid, author_name, max_pages=10: {"111", "222"},
+    )
+
+    def fake_save_run(run_id: str, run: RunState) -> None:
+        captured_run["state"] = run
+
+    monkeypatch.setattr(main_module, "_save_run", fake_save_run)
+
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": "111",
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+    )
+
+    assert response.status_code == 200
+    assert fetch_batches == [["111"], ["222"]]
+
+    run = captured_run["state"]
+    pmids = {citation.pmid for citation in run.citations}
+    assert pmids == {"111", "222"}
+
+    tags_by_pmid = {citation.pmid: citation.source_tags for citation in run.citations}
+    assert tags_by_pmid["111"] == {"user", "litsense"}
+    assert tags_by_pmid["222"] == {"litsense"}
+
 
 def _run_state(author_name: str, start_year: int | None, end_year: int | None) -> RunState:
     return RunState(
@@ -297,4 +414,3 @@ def test_xlsx_download_filename_all_years_suffix_when_year_filter_disabled() -> 
 def test_xlsx_download_filename_falls_back_when_name_cannot_be_parsed() -> None:
     run = _run_state("Cher", 2021, 2026)
     assert _xlsx_download_filename(run) == "cher_publications_2021_2026.xlsx"
-

@@ -15,8 +15,13 @@
     .warn { background: #fff4f2; }
     .outwindow { background: #fffbea; }
     a { color: #0f766e; text-decoration: none; }
-    .orcid-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem; margin-left: 0.3rem; border-radius: 999px; background: #a7f3d0; color: #065f46; font-size: 0.72rem; font-weight: 700; line-height: 1; }
-    .orcid-badge-weak { background: #fef3c7; color: #92400e; }
+    .orcid-badge { display: inline-flex; align-items: center; justify-content: center; gap: 0; min-height: 1.1rem; padding: 0.05rem 0.45rem; margin-left: 0.3rem; border-radius: 999px; border: 1px solid #d1d5db; background: #f8fafc; font-size: 0.72rem; font-weight: 700; line-height: 1; white-space: nowrap; }
+    .orcid-badge-weak { background: #fffbea; border-color: #facc15; }
+    .orcid-badge-orc { color: #6b7280; }
+    .orcid-badge-id { color: #a6ce39; }
+    .source-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 1.1rem; padding: 0.05rem 0.5rem; margin-left: 0.3rem; border-radius: 999px; font-size: 0.68rem; font-weight: 700; line-height: 1; }
+    .source-user { background: #a7f3d0; color: #065f46; }
+    .source-litsense { background: #bfdbfe; color: #1e3a8a; }
     button { margin-top: 1rem; background: #0f766e; color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
     .toolbar { margin-top: 0.75rem; display: flex; gap: 1rem; align-items: center; }
 
@@ -163,7 +168,7 @@
               <td>{{ row.journal }}</td>
               <td>{{ row.title }}</td>
               <td>
-                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}">iD</a>{% endif %}
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}{% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
               </td>
               <td>{{ row.authors_html|safe }}</td>

@@ -71,6 +71,19 @@ YEAR_OPTION_MIN = 1950
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LANDING_IMAGE_PATH = PROJECT_ROOT / "echidna.jpg"
 ORCID_AFFILIATION_LEVEL_RANK = {"verified": 4, "likely": 3, "contains": 2, "possible": 1}
+CITATION_SOURCE_ORDER = ("user", "litsense")
+CITATION_SOURCE_BADGE_META: dict[str, dict[str, str]] = {
+    "user": {
+        "label": "user",
+        "class": "source-badge source-user",
+        "title": "Provided in user PMID input",
+    },
+    "litsense": {
+        "label": "litsense",
+        "class": "source-badge source-litsense",
+        "title": "Matched in LitSense author query (PMID seed and/or ORCiD)",
+    },
+}
 
 
 def _to_author_list(citation: Citation) -> str:
@@ -132,6 +145,19 @@ def _orcid_badge_title(
     if affiliation_level:
         return f"ORCiD affiliation {affiliation_level} match"
     return "ORCiD match"
+
+
+def _citation_source_badges(citation: Citation) -> list[dict[str, str]]:
+    badges: list[dict[str, str]] = []
+    tags = set(citation.source_tags)
+    for tag in CITATION_SOURCE_ORDER:
+        if tag not in tags:
+            continue
+        meta = CITATION_SOURCE_BADGE_META.get(tag)
+        if meta is None:
+            continue
+        badges.append(meta)
+    return badges
 
 
 def _orcid_row_fields(
@@ -301,6 +327,7 @@ def _with_row_render_fields(
                 "print_date": row.citation.print_date,
                 "authors": _to_author_list(row.citation),
                 "authors_html": _to_author_list_html(row.citation, row.matched_positions),
+                "source_badges": _citation_source_badges(row.citation),
                 "publication_types": ", ".join(row.citation.publication_types) if row.citation.publication_types else "(unknown)",
                 "counted_as": counted_as,
                 "counted_as_report": counted_as_report,
@@ -604,6 +631,7 @@ def _build_citation_selection_rows(
                 "cluster_labels": " | ".join(sorted(row_cluster_labels)),
                 "affiliations": " | ".join(sorted(row_affiliations)) if row_affiliations else "(no affiliation listed)",
                 "authors_html": _to_author_list_html(citation_by_pmid[pmid], set(row_positions)),
+                "source_badges": _citation_source_badges(citation_by_pmid[pmid]),
                 "notes": "; ".join(sorted(row_notes)),
                 "needs_review": bool(review_reasons),
                 "review_reason": "; ".join(review_reasons),
@@ -645,6 +673,7 @@ def _build_cluster_citation_rows(
                 "year": citation.print_year,
                 "journal": citation.journal,
                 "title": citation.title,
+                "source_badges": _citation_source_badges(citation),
                 **_orcid_row_fields(
                     pmid=citation.pmid,
                     target_orcid=target_orcid,
@@ -800,6 +829,7 @@ def _build_out_of_window_rows(
                 "year": citation.print_year,
                 "journal": citation.journal,
                 "title": citation.title,
+                "source_badges": _citation_source_badges(citation),
                 **_orcid_row_fields(
                     pmid=citation.pmid,
                     target_orcid=target_orcid,
@@ -841,6 +871,7 @@ def _build_excluded_citation_rows(
                 "journal": citation.journal,
                 "title": citation.title,
                 "reason": excluded_reasons.get(citation.pmid, "Excluded by pre-disambiguation filter"),
+                "source_badges": _citation_source_badges(citation),
                 **_orcid_row_fields(
                     pmid=citation.pmid,
                     target_orcid=target_orcid,
@@ -1001,6 +1032,7 @@ def _serialize_citation(citation: Citation) -> dict[str, Any]:
         "co_senior_positions": sorted(citation.co_senior_positions),
         "notes": list(citation.notes),
         "doi": citation.doi,
+        "source_tags": sorted(citation.source_tags),
     }
 
 
@@ -1019,6 +1051,7 @@ def _deserialize_citation(payload: dict[str, Any]) -> Citation:
         co_senior_positions={int(v) for v in payload.get("co_senior_positions", [])},
         notes=[str(v) for v in payload.get("notes", [])],
         doi=(str(payload.get("doi", "")).strip() or None),
+        source_tags={str(v) for v in payload.get("source_tags", [])},
     )
 
 
@@ -1310,9 +1343,58 @@ def disambiguate(
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc))
             logger.exception("Chunk fetch failed for %d PMID(s)", len(chunk))
+    user_provided_pmids = set(parsed_pmids)
+    litsense_pmid_pmids: set[str] = set()
+    litsense_orcid_pmids: set[str] = set()
+    if parsed_pmids:
+        seed_pmid = parsed_pmids[0]
+        try:
+            litsense_pmid_pmids = client.fetch_litsense_pmids_by_query(seed_pmid=seed_pmid, author_name=author_name)
+            logger.info(
+                "LitSense seed query completed: seed=%s, returned=%d PMID(s)",
+                seed_pmid,
+                len(litsense_pmid_pmids),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LitSense seed query failed for seed=%s author=%r: %s", seed_pmid, author_name, exc)
+            errors.append("LitSense PMID query unavailable")
+    if target_orcid:
+        try:
+            litsense_orcid_pmids = client.fetch_litsense_pmids_by_orcid(target_orcid=target_orcid)
+            logger.info(
+                "LitSense ORCiD query completed: orcid=%s, returned=%d PMID(s)",
+                target_orcid,
+                len(litsense_orcid_pmids),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LitSense ORCiD query failed for %s: %s", target_orcid, exc)
+            errors.append("LitSense ORCiD query unavailable")
+
+    existing_pmids = {citation.pmid for citation in citations}
+    litsense_extra_pmids = sorted(
+        (litsense_pmid_pmids | litsense_orcid_pmids) - user_provided_pmids - existing_pmids,
+        key=int,
+    )
+    if litsense_extra_pmids:
+        logger.info("Fetching %d LitSense-only PMID(s) for verification flow", len(litsense_extra_pmids))
+        for chunk in split_chunks(litsense_extra_pmids):
+            try:
+                citations.extend(client.fetch_citations(chunk))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(str(exc))
+                logger.exception("LitSense-only chunk fetch failed for %d PMID(s)", len(chunk))
+
     cleaned_affiliations = _sanitize_citation_affiliations(citations)
     if cleaned_affiliations:
         logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
+
+    for citation in citations:
+        tags = set(citation.source_tags)
+        if citation.pmid in user_provided_pmids:
+            tags.add("user")
+        if citation.pmid in litsense_pmid_pmids or citation.pmid in litsense_orcid_pmids:
+            tags.add("litsense")
+        citation.source_tags = tags
 
     orcid_identifier_matches: dict[str, list[str]] = {}
     orcid_affiliation_matches: dict[str, dict[str, str]] = {}
@@ -1422,6 +1504,7 @@ def disambiguate(
             "affiliation": affiliation or "(no affiliation listed)",
             "missing_reason": reason,
             "notes": "; ".join(matched_citation.notes),
+            "source_badges": _citation_source_badges(matched_citation),
             **_orcid_row_fields(
                 pmid=matched_citation.pmid,
                 target_orcid=target_orcid,

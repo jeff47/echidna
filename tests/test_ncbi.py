@@ -1,8 +1,12 @@
 import httpx
 
+import app.ncbi as ncbi_module
 from app.ncbi import (
+    LITSENSE_AUTHOR_URL,
     NcbiClient,
     _augment_params,
+    _build_litsense_author_query,
+    _extract_litsense_pmids,
     _extract_pmc_article_doi,
     _idconv_records,
     _retry_delay_seconds,
@@ -153,3 +157,78 @@ def test_extract_pmc_article_doi_from_article_meta() -> None:
     """
 
     assert _extract_pmc_article_doi(xml) == "10.2000/example.2"
+
+
+def test_extract_litsense_pmids_from_nested_payload() -> None:
+    payload = {
+        "count": 2,
+        "results": [
+            {"pmid": 12345, "score": 0.9},
+            {"entry": {"pmids": ["67890", "111213"]}},
+        ],
+        "metadata": {"ignored": "value"},
+    }
+
+    pmids = _extract_litsense_pmids(payload)
+
+    assert pmids == {"12345", "67890", "111213"}
+
+
+def test_build_litsense_author_query_uses_last_name_and_first_initial() -> None:
+    query = _build_litsense_author_query(seed_pmid="39164478", author_name="Jeffrey Stephen Rice")
+
+    assert query == "39164478 Rice J"
+
+
+def test_fetch_litsense_pmids_by_query_uses_percent_encoded_spaces(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    client = NcbiClient()
+
+    def fake_fetch(*, max_pages: int, params: dict[str, str] | None = None, initial_url: str | None = None) -> set[str]:
+        captured["max_pages"] = max_pages
+        captured["params"] = params
+        captured["initial_url"] = initial_url
+        return {"1"}
+
+    monkeypatch.setattr(client, "_fetch_litsense_pmids", fake_fetch)
+
+    result = client.fetch_litsense_pmids_by_query(seed_pmid="39164478", author_name="Jeffrey Rice", max_pages=3)
+
+    assert result == {"1"}
+    assert captured["max_pages"] == 3
+    assert captured["params"] is None
+    assert captured["initial_url"] == f"{LITSENSE_AUTHOR_URL}?query=39164478%20Rice%20J"
+
+
+def test_fetch_litsense_pmids_by_orcid_retries_after_429(monkeypatch) -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def get(self, url: str, params: dict[str, str] | None = None) -> httpx.Response:
+            self.calls += 1
+            request = httpx.Request("GET", url, params=params)
+            if self.calls == 1:
+                return httpx.Response(429, headers={"Retry-After": "0"}, request=request)
+            return httpx.Response(200, json={"results": [{"pmid": "12345"}]}, request=request)
+
+    fake_http_client = FakeClient()
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(ncbi_module.httpx, "Client", lambda *args, **kwargs: fake_http_client)
+    monkeypatch.setattr(ncbi_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    client = NcbiClient()
+    monkeypatch.setattr(client, "_throttle", lambda: None)
+
+    pmids = client.fetch_litsense_pmids_by_orcid(target_orcid="0000-0002-1825-0097", max_pages=1)
+
+    assert pmids == {"12345"}
+    assert fake_http_client.calls == 2
+    assert sleep_calls == [0.5]

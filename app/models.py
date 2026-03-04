@@ -29,6 +29,7 @@ class Citation:
     co_senior_positions: set[int] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
     doi: str | None = None
+    source_tags: set[str] = field(default_factory=set)
 
 
 @dataclass(slots=True)

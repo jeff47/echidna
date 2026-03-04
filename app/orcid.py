@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -16,6 +18,8 @@ DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE
 NON_DIGIT = re.compile(r"\D+")
 NON_ALNUM = re.compile(r"[^A-Z0-9]+")
 NON_WORD = re.compile(r"[^a-z0-9]+")
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -35,17 +39,27 @@ class OrcidClient:
         client_secret: str | None = None,
         token_url: str | None = None,
         api_base_url: str | None = None,
+        max_retries: int = 4,
+        min_interval_seconds: float = 0.2,
     ) -> None:
         self.timeout = timeout
         configured_client_id = client_id if client_id is not None else os.getenv("ORCID_CLIENT_ID", "")
         configured_client_secret = client_secret if client_secret is not None else os.getenv("ORCID_CLIENT_SECRET", "")
         configured_token_url = token_url if token_url is not None else os.getenv("ORCID_TOKEN_URL", "https://orcid.org/oauth/token")
         configured_api_base_url = api_base_url if api_base_url is not None else os.getenv("ORCID_API_BASE_URL", "https://pub.orcid.org/v3.0")
+        configured_min_interval = os.getenv("ORCID_MIN_INTERVAL_SECONDS", str(min_interval_seconds))
 
         self.client_id = configured_client_id.strip()
         self.client_secret = configured_client_secret.strip()
         self.token_url = configured_token_url.strip()
         self.api_base_url = configured_api_base_url.strip().rstrip("/")
+        self.max_retries = max_retries
+        try:
+            parsed_min_interval = float(configured_min_interval)
+        except ValueError:
+            parsed_min_interval = min_interval_seconds
+        self.min_interval_seconds = max(0.0, parsed_min_interval)
+        self._next_request_at = 0.0
         self._cached_token: str = ""
         self._token_expires_at: float = 0.0
 
@@ -147,8 +161,7 @@ class OrcidClient:
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
         }
-        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
-            response = client.get(url, headers=headers)
+        response = self._request("GET", url, headers=headers)
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
@@ -165,8 +178,7 @@ class OrcidClient:
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
         }
-        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
-            response = client.get(url, headers=headers)
+        response = self._request("GET", url, headers=headers)
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
@@ -188,8 +200,7 @@ class OrcidClient:
             "scope": "/read-public",
         }
         headers = {"Accept": "application/json"}
-        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
-            response = client.post(self.token_url, data=form_data, headers=headers)
+        response = self._request("POST", self.token_url, headers=headers, data=form_data)
         response.raise_for_status()
         payload = response.json()
 
@@ -223,13 +234,67 @@ class OrcidClient:
             "start": "0",
             "rows": str(rows),
         }
-        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
-            response = client.get(url, headers=headers, params=params)
+        response = self._request("GET", url, headers=headers, params=params)
         response.raise_for_status()
         payload = response.json()
         if isinstance(payload, dict):
             return payload
         return {}
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        data: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        last_response: httpx.Response | None = None
+        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+            for attempt in range(self.max_retries + 1):
+                self._throttle()
+                response = client.request(method, url, headers=headers, params=params, data=data)
+                last_response = response
+                if response.status_code in (429, 500, 502, 503, 504):
+                    if attempt >= self.max_retries:
+                        response.raise_for_status()
+                    delay_seconds = _retry_delay_seconds(response, attempt)
+                    logger.warning(
+                        "ORCiD request retry: status=%d method=%s url=%s attempt=%d/%d wait=%.2fs",
+                        response.status_code,
+                        method,
+                        url,
+                        attempt + 1,
+                        self.max_retries + 1,
+                        delay_seconds,
+                    )
+                    time.sleep(delay_seconds)
+                    continue
+                response.raise_for_status()
+                return response
+        if last_response is not None:
+            last_response.raise_for_status()
+        raise RuntimeError("ORCiD request failed without response")
+
+    def _throttle(self) -> None:
+        now = time.monotonic()
+        if now < self._next_request_at:
+            time.sleep(self._next_request_at - now)
+        self._next_request_at = time.monotonic() + self.min_interval_seconds
+
+
+def _retry_delay_seconds(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("Retry-After", "").strip()
+    if retry_after:
+        try:
+            return max(0.5, float(retry_after))
+        except ValueError:
+            retry_at = parsedate_to_datetime(retry_after)
+            now = time.time()
+            return max(0.5, retry_at.timestamp() - now)
+    # Exponential backoff with cap.
+    return min(8.0, 0.6 * (2**attempt))
 
 
 def _extract_work_identifiers(payload: dict[str, Any]) -> dict[str, set[str]]:
