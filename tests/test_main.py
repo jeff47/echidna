@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.logic import AnalysisResult
 from app.main import app as fastapi_app
-from app.main import _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields, _with_row_render_fields
+from app.main import RunState, _build_citation_selection_rows, _build_cluster_orcid_affiliation_matches, _orcid_row_fields, _with_row_render_fields, _xlsx_download_filename
 from app.models import Author, AuthorMatch, Citation, ReportRow
 
 
@@ -259,3 +259,42 @@ def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) 
     payload = response.json()
     assert payload["author_name"] == "Jeffrey Rice"
     assert payload["matches"][0]["orcid"] == "0000-0002-1825-0097"
+
+def _run_state(author_name: str, start_year: int | None, end_year: int | None) -> RunState:
+    return RunState(
+        author_name=author_name,
+        target_orcid="",
+        start_year=start_year,
+        end_year=end_year,
+        peer_reviewed_only=True,
+        excluded_type_terms=[],
+        citations=[],
+        clusters=[],
+        matches=[],
+        excluded_pmids=set(),
+        excluded_reasons={},
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={},
+        orcid_sync_error=None,
+    )
+
+
+def test_xlsx_download_filename_uses_surname_plus_initials_for_full_name() -> None:
+    run = _run_state("Jeffrey S Rice", 2021, 2026)
+    assert _xlsx_download_filename(run) == "ricejs_publications_2021_2026.xlsx"
+
+
+def test_xlsx_download_filename_uses_surname_plus_initials_for_pubmed_style_name() -> None:
+    run = _run_state("Rice JS", 2021, 2026)
+    assert _xlsx_download_filename(run) == "ricejs_publications_2021_2026.xlsx"
+
+
+def test_xlsx_download_filename_all_years_suffix_when_year_filter_disabled() -> None:
+    run = _run_state("Rice JS", None, None)
+    assert _xlsx_download_filename(run) == "ricejs_publications_all_years.xlsx"
+
+
+def test_xlsx_download_filename_falls_back_when_name_cannot_be_parsed() -> None:
+    run = _run_state("Cher", 2021, 2026)
+    assert _xlsx_download_filename(run) == "cher_publications_2021_2026.xlsx"
+

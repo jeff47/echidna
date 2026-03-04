@@ -461,10 +461,7 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
     for col, width in column_widths.items():
         sheet.column_dimensions[col].width = width
 
-    if run.start_year is None or run.end_year is None:
-        filename = "echidna_all_years.xlsx"
-    else:
-        filename = f"echidna_{run.start_year}_{run.end_year}.xlsx"
+    filename = _xlsx_download_filename(run)
     output = io.BytesIO()
     workbook.save(output)
     return Response(
@@ -472,6 +469,30 @@ def _xlsx_response_for_analysis(*, run: RunState, analysis: AnalysisResult) -> R
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _filename_author_token(author_name: str) -> str:
+    raw = author_name.strip()
+    if not raw:
+        return "author"
+    try:
+        target = parse_target_name(raw)
+        surname = re.sub(r"[^a-z0-9]+", "", target.surname.lower())
+        initials = re.sub(r"[^a-z0-9]+", "", target.initials.lower())
+        combined = f"{surname}{initials}"
+        if combined:
+            return combined
+    except ValueError:
+        pass
+    fallback = re.sub(r"[^a-z0-9]+", "", raw.lower())
+    return fallback or "author"
+
+
+def _xlsx_download_filename(run: RunState) -> str:
+    author_token = _filename_author_token(run.author_name)
+    if run.start_year is None or run.end_year is None:
+        return f"{author_token}_publications_all_years.xlsx"
+    return f"{author_token}_publications_{run.start_year}_{run.end_year}.xlsx"
 
 
 def _missing_affiliation_reason(citation: Citation, affiliation: str) -> str:
