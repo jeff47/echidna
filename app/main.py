@@ -73,6 +73,7 @@ LANDING_IMAGE_PATH = PROJECT_ROOT / "echidna.jpg"
 FAVICON_PATH = PROJECT_ROOT / "favicon.ico"
 ORCID_AFFILIATION_LEVEL_RANK = {"verified": 4, "likely": 3, "contains": 2, "possible": 1}
 CITATION_SOURCE_ORDER = ("user", "litsense")
+PREPRINT_PUBLICATION_TYPE = "preprint"
 CITATION_SOURCE_BADGE_META: dict[str, dict[str, str]] = {
     "user": {
         "label": "user",
@@ -112,6 +113,10 @@ def _year_window_label(start_year: int | None, end_year: int | None) -> str:
     if start_year is None or end_year is None:
         return "all years"
     return f"{start_year}-{end_year}"
+
+
+def _publication_type_exclusion_options() -> list[str]:
+    return [term for term in default_excluded_type_terms() if term != PREPRINT_PUBLICATION_TYPE]
 
 
 def _selected_default_excluded_type_terms(submitted: list[str], options: list[str]) -> list[str]:
@@ -223,6 +228,8 @@ def _orcid_row_fields(
 def _default_correction_mode(row: Any) -> str:
     if not row.include:
         return "exclude"
+    if row.is_preprint:
+        return "first_senior_preprint" if (row.counted_first or row.counted_senior) else "coauthor_preprint"
     if row.is_review and row.counted_review_senior:
         return "first_senior_review"
     if row.is_review:
@@ -235,12 +242,16 @@ def _default_correction_mode(row: Any) -> str:
 
 
 def _counted_as_category(row: Any) -> str:
+    if row.is_preprint:
+        return "1st/Sr preprint" if (row.counted_first or row.counted_senior) else "coauthor preprint"
     if row.is_review:
         return "1st/Sr review" if (row.counted_senior or row.counted_review_senior) else "coauthor review"
     return "1st/Sr author" if (row.counted_first or row.counted_senior) else "coauthor"
 
 
 def _counted_mode_from_flags(row: Any) -> str:
+    if row.is_preprint:
+        return "first_senior_preprint" if (row.counted_first or row.counted_senior) else "coauthor_preprint"
     if row.is_review:
         return "first_senior_review" if (row.counted_senior or row.counted_review_senior) else "coauthor_review"
     return "first_senior_author" if (row.counted_first or row.counted_senior) else "coauthor"
@@ -261,6 +272,8 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_senior = False
         row.counted_review_senior = False
         row.is_review = False
+        row.is_preprint = False
+        row.preprint_superseded_by = []
         return
     if mode == "coauthor":
         row.include = True
@@ -269,6 +282,8 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_senior = False
         row.counted_review_senior = False
         row.is_review = False
+        row.is_preprint = False
+        row.preprint_superseded_by = []
         return
     if mode == "first_senior_author":
         row.include = True
@@ -277,6 +292,28 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_senior = True
         row.counted_review_senior = False
         row.is_review = False
+        row.is_preprint = False
+        row.preprint_superseded_by = []
+        return
+    if mode == "coauthor_preprint":
+        row.include = True
+        row.counted_overall = False
+        row.counted_first = False
+        row.counted_senior = False
+        row.counted_review_senior = False
+        row.is_review = False
+        row.is_preprint = True
+        row.preprint_superseded_by = []
+        return
+    if mode == "first_senior_preprint":
+        row.include = True
+        row.counted_overall = False
+        row.counted_first = False
+        row.counted_senior = True
+        row.counted_review_senior = False
+        row.is_review = False
+        row.is_preprint = True
+        row.preprint_superseded_by = []
         return
     if mode == "coauthor_review":
         row.include = True
@@ -285,6 +322,8 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_senior = False
         row.counted_review_senior = False
         row.is_review = True
+        row.is_preprint = False
+        row.preprint_superseded_by = []
         return
     if mode == "first_senior_review":
         row.include = True
@@ -293,6 +332,8 @@ def _apply_correction_mode(row: Any, mode: str) -> None:
         row.counted_senior = True
         row.counted_review_senior = True
         row.is_review = True
+        row.is_preprint = False
+        row.preprint_superseded_by = []
         return
 
 
@@ -318,6 +359,11 @@ def _with_row_render_fields(
         counted_as_report = counted_as if row.include else "exclude"
         counted_mode = _counted_mode_from_flags(row)
         notes = list(row.citation.notes) + list(row.uncertainty_reasons)
+        if row.preprint_superseded_by:
+            notes.append(
+                "Preprint skipped: superseded by peer-reviewed PMID(s): "
+                + ", ".join(str(pmid) for pmid in row.preprint_superseded_by)
+            )
         if row.forced_include:
             notes.append("Forced include override from Step 1")
 
@@ -366,7 +412,11 @@ def _with_row_render_fields(
                 "status_label": (
                     "included (review separate)"
                     if row.include and not row.counted_overall and row.is_review
-                    else ("included" if row.include else "excluded")
+                    else (
+                        "included (preprint separate)"
+                        if row.include and not row.counted_overall and row.is_preprint
+                        else ("included" if row.include else "excluded")
+                    )
                 ),
             }
         )
@@ -1095,6 +1145,8 @@ def _serialize_citation(citation: Citation) -> dict[str, Any]:
         "notes": list(citation.notes),
         "doi": citation.doi,
         "source_tags": sorted(citation.source_tags),
+        "update_in_pmids": sorted(citation.update_in_pmids),
+        "update_of_pmids": sorted(citation.update_of_pmids),
     }
 
 
@@ -1114,6 +1166,8 @@ def _deserialize_citation(payload: dict[str, Any]) -> Citation:
         notes=[str(v) for v in payload.get("notes", [])],
         doi=(str(payload.get("doi", "")).strip() or None),
         source_tags={str(v) for v in payload.get("source_tags", [])},
+        update_in_pmids={str(v) for v in payload.get("update_in_pmids", [])},
+        update_of_pmids={str(v) for v in payload.get("update_of_pmids", [])},
     )
 
 
@@ -1261,7 +1315,7 @@ def _render_analysis_result(
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     year = date.today().year
-    default_excluded_type_options = default_excluded_type_terms()
+    default_excluded_type_options = _publication_type_exclusion_options()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -1272,6 +1326,7 @@ def index(request: Request) -> HTMLResponse:
             "end_year": year,
             "pmids": "",
             "all_years": False,
+            "include_preprints": False,
             "extra_excluded_types": "",
             "default_excluded_type_options": default_excluded_type_options,
             "selected_default_excluded_types": list(default_excluded_type_options),
@@ -1326,12 +1381,14 @@ def disambiguate(
     start_year: int = Form(...),
     end_year: int = Form(...),
     all_years: str | None = Form(default=None),
+    include_preprints: str | None = Form(default=None),
     default_excluded_types: list[str] = Form(default=[]),
     default_excluded_types_present: str | None = Form(default=None),
     extra_excluded_types: str = Form(default=""),
 ) -> HTMLResponse:
     all_years_enabled = all_years is not None
-    default_excluded_type_options = default_excluded_type_terms()
+    include_preprints_enabled = include_preprints is not None
+    default_excluded_type_options = _publication_type_exclusion_options()
     if default_excluded_types_present is None:
         # Backward compatibility for clients that do not submit the checklist fields.
         selected_default_excluded_types = list(default_excluded_type_options)
@@ -1340,13 +1397,16 @@ def disambiguate(
             default_excluded_types, default_excluded_type_options
         )
     excluded_type_terms = _dedupe_terms(selected_default_excluded_types + parse_type_terms(extra_excluded_types))
+    if not include_preprints_enabled:
+        excluded_type_terms = _dedupe_terms([PREPRINT_PUBLICATION_TYPE] + excluded_type_terms)
     logger.info(
-        "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, excluded_type_terms=%d",
+        "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, include_preprints=%s, excluded_type_terms=%d",
         author_name,
         author_orcid,
         start_year,
         end_year,
         all_years_enabled,
+        include_preprints_enabled,
         len(excluded_type_terms),
     )
     try:
@@ -1363,6 +1423,7 @@ def disambiguate(
                 "end_year": end_year,
                 "pmids": pmids,
                 "all_years": all_years_enabled,
+                "include_preprints": include_preprints_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
                 "selected_default_excluded_types": selected_default_excluded_types,
@@ -1387,6 +1448,7 @@ def disambiguate(
                 "end_year": end_year,
                 "pmids": pmids,
                 "all_years": all_years_enabled,
+                "include_preprints": include_preprints_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
                 "selected_default_excluded_types": selected_default_excluded_types,
@@ -1407,6 +1469,7 @@ def disambiguate(
                 "end_year": end_year,
                 "pmids": pmids,
                 "all_years": all_years_enabled,
+                "include_preprints": include_preprints_enabled,
                 "extra_excluded_types": extra_excluded_types,
                 "default_excluded_type_options": default_excluded_type_options,
                 "selected_default_excluded_types": selected_default_excluded_types,

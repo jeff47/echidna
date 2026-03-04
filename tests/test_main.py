@@ -281,6 +281,40 @@ def test_with_row_render_fields_skips_missing_orcid_note_when_identifier_check_u
     assert "No match from ORCiD" not in str(rows[0]["notes"])
 
 
+def test_with_row_render_fields_adds_superseded_preprint_note() -> None:
+    citation = _citation("299")
+    citation.publication_types = ["Preprint"]
+    analysis = AnalysisResult(
+        rows=[
+            ReportRow(
+                citation=citation,
+                counted_overall=False,
+                counted_first=False,
+                counted_senior=False,
+                counted_review_senior=False,
+                is_review=False,
+                is_preprint=True,
+                uncertainty_reasons=[],
+                include=False,
+                forced_include=False,
+                matched_positions={1},
+                preprint_superseded_by=["38821936"],
+            )
+        ],
+        uncertain_indices=[],
+    )
+
+    rows = _with_row_render_fields(
+        analysis,
+        orcid_identifier_matches={},
+        orcid_affiliation_matches={},
+        target_orcid="",
+        orcid_identifier_checked=False,
+    )
+
+    assert "Preprint skipped: superseded by peer-reviewed PMID(s): 38821936" in str(rows[0]["notes"])
+
+
 def test_with_row_render_fields_includes_source_badges() -> None:
     citation = _citation("202")
     citation.source_tags = {"user", "litsense"}
@@ -496,6 +530,50 @@ def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypa
     tags_by_pmid = {citation.pmid: citation.source_tags for citation in run.citations}
     assert tags_by_pmid["111"] == {"user", "litsense"}
     assert tags_by_pmid["222"] == {"litsense"}
+
+
+@pytest.mark.parametrize(
+    ("include_preprints_field", "expect_preprint_excluded"),
+    [
+        (None, True),
+        ("on", False),
+    ],
+)
+def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
+    monkeypatch: pytest.MonkeyPatch,
+    include_preprints_field: str | None,
+    expect_preprint_excluded: bool,
+) -> None:
+    from app import main as main_module
+
+    captured_run: dict[str, RunState] = {}
+    citation_111 = _citation("111")
+
+    monkeypatch.setattr(main_module.client, "fetch_citations", lambda pmids: [citation_111])
+    monkeypatch.setattr(
+        main_module.client,
+        "fetch_litsense_pmids_by_query",
+        lambda *, seed_pmid, author_name, max_pages=10: {"111"},
+    )
+    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: captured_run.setdefault("state", run))
+
+    form_data: dict[str, str] = {
+        "author_name": "Jeffrey Rice",
+        "author_orcid": "",
+        "pmids": "111",
+        "start_year": "2020",
+        "end_year": "2026",
+        "all_years": "on",
+    }
+    if include_preprints_field is not None:
+        form_data["include_preprints"] = include_preprints_field
+
+    client = TestClient(fastapi_app)
+    response = client.post("/disambiguate", data=form_data)
+
+    assert response.status_code == 200
+    excluded_type_terms = captured_run["state"].excluded_type_terms
+    assert ("preprint" in excluded_type_terms) is expect_preprint_excluded
 
 
 def _run_state(author_name: str, start_year: int | None, end_year: int | None) -> RunState:

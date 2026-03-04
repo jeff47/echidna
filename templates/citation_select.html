@@ -108,109 +108,12 @@
       padding: 0.45rem 0.8rem;
       cursor: pointer;
     }
-    .workflow { margin: 0.85rem 0 1rem; }
-    .workflow-track { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
-    .workflow-step {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      min-height: 1.9rem;
-      padding: 0.22rem 0.85rem 0.22rem 0.65rem;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      background: #f8fafc;
-      color: #64748b;
-      font-size: 0.78rem;
-      font-weight: 700;
-      line-height: 1.15;
-      white-space: nowrap;
-      margin-right: 0.65rem;
-    }
-    .workflow-step::before {
-      content: "";
-      position: absolute;
-      top: -1px;
-      right: -0.74rem;
-      width: 0;
-      height: 0;
-      border-top: 1.02rem solid transparent;
-      border-bottom: 1.02rem solid transparent;
-      border-left: 0.74rem solid #cbd5e1;
-      pointer-events: none;
-    }
-    .workflow-step::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      right: -0.66rem;
-      width: 0;
-      height: 0;
-      border-top: 0.96rem solid transparent;
-      border-bottom: 0.96rem solid transparent;
-      border-left: 0.66rem solid #f8fafc;
-      pointer-events: none;
-    }
-    .workflow-step:last-child {
-      margin-right: 0;
-    }
-    .workflow-step:last-child::before,
-    .workflow-step:last-child::after {
-      display: none;
-    }
-    .workflow-step.is-active {
-      background: #dbeafe;
-      border-color: #93c5fd;
-      color: #1d4ed8;
-    }
-    .workflow-step.is-active::before {
-      border-left-color: #93c5fd;
-    }
-    .workflow-step.is-active::after {
-      border-left-color: #dbeafe;
-    }
-    @media (max-width: 640px) {
-      .workflow-track {
-        gap: 0.55rem;
-      }
-      .workflow-step {
-        font-size: 0.72rem;
-        min-height: 1.75rem;
-        padding: 0.18rem 0.72rem 0.18rem 0.56rem;
-        margin-right: 0.52rem;
-      }
-      .workflow-step::before {
-        right: -0.60rem;
-        border-top: 0.94rem solid transparent;
-        border-bottom: 0.94rem solid transparent;
-        border-left: 0.60rem solid #cbd5e1;
-      }
-      .workflow-step::after {
-        right: -0.53rem;
-        border-top: 0.88rem solid transparent;
-        border-bottom: 0.88rem solid transparent;
-        border-left: 0.53rem solid #f8fafc;
-      }
-      .workflow-step.is-active::before {
-        border-left-color: #93c5fd;
-      }
-      .workflow-step.is-active::after {
-        border-left-color: #dbeafe;
-      }
-    }
-
   </style>
 </head>
 <body>
 <main>
   <div class="card">
     <div class="header-row"><h1>Step 2: Citation Selection</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
-    <div class="workflow" role="navigation" aria-label="ECHIDNA workflow">
-      <div class="workflow-track">
-        <span class="workflow-step">Step 1: Confirm Author</span>
-        <span class="workflow-step is-active">Step 2: Citation Selection</span>
-        <span class="workflow-step">Step 3: Final Report</span>
-      </div>
-    </div>
     <p>Author: <strong>{{ author_name }}</strong>{% if target_orcid %} | ORCID: <strong>{{ target_orcid }}</strong>{% endif %} | Window: {{ year_window_label }}</p>
     <p class="muted">Only citations requiring manual review are shown below.</p>
     {% if auto_included_pmids %}

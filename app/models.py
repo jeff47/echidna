@@ -30,6 +30,8 @@ class Citation:
     notes: list[str] = field(default_factory=list)
     doi: str | None = None
     source_tags: set[str] = field(default_factory=set)
+    update_in_pmids: set[str] = field(default_factory=set)
+    update_of_pmids: set[str] = field(default_factory=set)
 
 
 @dataclass(slots=True)
@@ -67,7 +69,9 @@ class ReportRow:
     counted_senior: bool
     counted_review_senior: bool = False
     is_review: bool = False
+    is_preprint: bool = False
     uncertainty_reasons: list[str] = field(default_factory=list)
     include: bool = True
     forced_include: bool = False
     matched_positions: set[int] = field(default_factory=set)
+    preprint_superseded_by: list[str] = field(default_factory=list)

@@ -271,6 +271,13 @@ def citation_matches_excluded_type(citation: Citation, excluded_terms: list[str]
     return bool(deduped), deduped
 
 
+def is_preprint_article(citation: Citation) -> bool:
+    for pub_type in citation.publication_types:
+        if "preprint" in normalize_publication_type(pub_type):
+            return True
+    return False
+
+
 def is_review_article(citation: Citation) -> bool:
     for pub_type in citation.publication_types:
         if "review" in normalize_publication_type(pub_type):
@@ -543,6 +550,57 @@ class AnalysisResult:
     uncertain_indices: list[int]
 
 
+def _pmid_sort_key(value: str) -> tuple[int, int | str]:
+    if value.isdigit():
+        return (0, int(value))
+    return (1, value)
+
+
+def _normalize_doi_for_match(value: str | None) -> str:
+    if value is None:
+        return ""
+    return value.strip().lower()
+
+
+def _superseded_preprint_targets(citations: list[Citation]) -> dict[str, list[str]]:
+    by_pmid = {citation.pmid: citation for citation in citations}
+    non_preprint_by_doi: dict[str, set[str]] = defaultdict(set)
+    reverse_update_links: dict[str, set[str]] = defaultdict(set)
+
+    for citation in citations:
+        if not is_preprint_article(citation):
+            doi = _normalize_doi_for_match(citation.doi)
+            if doi:
+                non_preprint_by_doi[doi].add(citation.pmid)
+        if is_preprint_article(citation):
+            continue
+        for prior_pmid in citation.update_of_pmids:
+            reverse_update_links[prior_pmid].add(citation.pmid)
+
+    superseded: dict[str, list[str]] = {}
+    for citation in citations:
+        if not is_preprint_article(citation):
+            continue
+        targets: set[str] = set()
+        for updated_pmid in citation.update_in_pmids:
+            linked = by_pmid.get(updated_pmid)
+            if linked is not None and is_preprint_article(linked):
+                continue
+            targets.add(updated_pmid)
+        targets.update(reverse_update_links.get(citation.pmid, set()))
+
+        doi = _normalize_doi_for_match(citation.doi)
+        if doi:
+            targets.update(non_preprint_by_doi.get(doi, set()))
+
+        targets.discard(citation.pmid)
+        if not targets:
+            continue
+        superseded[citation.pmid] = sorted(targets, key=_pmid_sort_key)
+
+    return superseded
+
+
 def analyze_citations(
     citations: list[Citation],
     matches: list[AuthorMatch],
@@ -562,6 +620,7 @@ def analyze_citations(
 
     rows: list[ReportRow] = []
     uncertain_indices: list[int] = []
+    superseded_preprints = _superseded_preprint_targets(citations)
 
     for citation in citations:
         force_included = citation.pmid in forced_include_pmids
@@ -598,20 +657,25 @@ def analyze_citations(
 
         counted_first = bool(first_positions & selected_positions)
         counted_senior = bool(senior_positions & selected_positions)
+        preprint_article = is_preprint_article(citation)
         review_article = is_review_article(citation)
         counted_review_senior = review_article and counted_senior
+        superseded_by = list(superseded_preprints.get(citation.pmid, []))
+        superseded_preprint = preprint_article and bool(superseded_by)
 
         row = ReportRow(
             citation=citation,
-            counted_overall=not review_article,
+            counted_overall=not (review_article or preprint_article),
             counted_first=counted_first,
             counted_senior=counted_senior,
             counted_review_senior=counted_review_senior,
             is_review=review_article,
+            is_preprint=preprint_article,
             uncertainty_reasons=reasons,
-            include=not reasons,
+            include=not reasons and not superseded_preprint,
             forced_include=force_included,
             matched_positions=set(selected_positions),
+            preprint_superseded_by=superseded_by,
         )
         rows.append(row)
         if reasons:
@@ -641,11 +705,13 @@ def format_summary(
     total = len(overall_included)
     first_senior = [r for r in overall_included if r.counted_first or r.counted_senior]
     review_senior_total = sum(1 for r in included if r.counted_review_senior)
+    preprint_total = sum(1 for r in included if r.is_preprint)
     detail = _first_senior_detail(first_senior)
     return (
         f"Peer-reviewed Publications ({window_label}): {total} total, "
         f"{len(first_senior)} 1st/Sr author ({detail}). "
-        f"In addition: {review_senior_total} review(s) as Sr author."
+        f"In addition: {review_senior_total} review(s) as Sr author; "
+        f"{preprint_total} preprint(s) (separate subtotal, not included in peer-reviewed total)."
     )
 
 

@@ -558,6 +558,70 @@ def test_review_senior_is_separate_from_overall_total() -> None:
     assert "1 review(s) as Sr author" in summary
 
 
+def test_preprint_is_separate_from_overall_total() -> None:
+    target = parse_target_name("Jane Doe")
+    citation = _citation(
+        "42",
+        2024,
+        [_author(1, "Doe", "Jane", "J", "Inst A"), _author(2, "Smith", "Amy", "A", "Inst")],
+        publication_types=["Preprint"],
+    )
+    clusters, matches = build_clusters([citation], target)
+    result = analyze_citations(
+        citations=[citation],
+        matches=matches,
+        selected_cluster_ids={clusters[0].cluster_id},
+        start_year=2021,
+        end_year=2026,
+    )
+    assert len(result.rows) == 1
+    row = result.rows[0]
+    assert row.include is True
+    assert row.is_preprint is True
+    assert row.counted_overall is False
+    summary = format_summary(result.rows, 2021, 2026)
+    assert "0 total" in summary
+    assert "1 preprint(s)" in summary
+
+
+def test_superseded_preprint_is_skipped_when_peer_reviewed_version_is_present() -> None:
+    target = parse_target_name("Jane Doe")
+    preprint = _citation(
+        "37066336",
+        2023,
+        [_author(1, "Doe", "Jane", "J", "Inst A"), _author(2, "Smith", "Amy", "A", "Inst")],
+        publication_types=["Preprint"],
+    )
+    preprint.update_in_pmids = {"38821936"}
+    published = _citation(
+        "38821936",
+        2024,
+        [_author(1, "Doe", "Jane", "J", "Inst A"), _author(2, "Smith", "Amy", "A", "Inst")],
+        publication_types=["Journal Article"],
+    )
+    published.update_of_pmids = {"37066336"}
+    clusters, matches = build_clusters([preprint, published], target)
+    result = analyze_citations(
+        citations=[preprint, published],
+        matches=matches,
+        selected_cluster_ids={cluster.cluster_id for cluster in clusters},
+        start_year=2021,
+        end_year=2026,
+    )
+    row_by_pmid = {row.citation.pmid: row for row in result.rows}
+    preprint_row = row_by_pmid["37066336"]
+    published_row = row_by_pmid["38821936"]
+
+    assert preprint_row.is_preprint is True
+    assert preprint_row.include is False
+    assert preprint_row.preprint_superseded_by == ["38821936"]
+    assert published_row.include is True
+    assert published_row.counted_overall is True
+    summary = format_summary(result.rows, 2021, 2026)
+    assert "1 total" in summary
+    assert "0 preprint(s)" in summary
+
+
 def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:
     rows = [
         # Included first/senior rows

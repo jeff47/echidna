@@ -145,6 +145,58 @@ def test_parse_pubmed_extracts_doi_from_article_id() -> None:
     assert citations[0].doi == "10.1000/test-doi.1"
 
 
+def test_parse_pubmed_extracts_update_relationship_pmids() -> None:
+    xml = """
+    <PubmedArticleSet>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>37066336</PMID>
+          <Article>
+            <ArticleTitle>Preprint test</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>bioRxiv</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2023</Year></PubDate></JournalIssue>
+            </Journal>
+          </Article>
+          <CommentsCorrectionsList>
+            <CommentsCorrections RefType="UpdateIn">
+              <PMID Version="1">38821936</PMID>
+            </CommentsCorrections>
+            <CommentsCorrections RefType="ErratumIn">
+              <PMID Version="1">39999999</PMID>
+            </CommentsCorrections>
+          </CommentsCorrectionsList>
+        </MedlineCitation>
+      </PubmedArticle>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>38821936</PMID>
+          <Article>
+            <ArticleTitle>Published test</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>Nat Commun</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue>
+            </Journal>
+          </Article>
+          <CommentsCorrectionsList>
+            <CommentsCorrections RefType="UpdateOf">
+              <PMID Version="1">37066336</PMID>
+            </CommentsCorrections>
+          </CommentsCorrectionsList>
+        </MedlineCitation>
+      </PubmedArticle>
+    </PubmedArticleSet>
+    """
+    client = NcbiClient()
+    citations = client._parse_pubmed(xml)
+    citation_by_pmid = {citation.pmid: citation for citation in citations}
+
+    assert citation_by_pmid["37066336"].update_in_pmids == {"38821936"}
+    assert citation_by_pmid["37066336"].update_of_pmids == set()
+    assert citation_by_pmid["38821936"].update_of_pmids == {"37066336"}
+    assert citation_by_pmid["38821936"].update_in_pmids == set()
+
+
 def test_extract_pmc_article_doi_from_article_meta() -> None:
     xml = """
     <article>

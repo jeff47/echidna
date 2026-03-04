@@ -329,6 +329,7 @@ class NcbiClient:
             pub_date = _find_pub_date(article)
             authors = _find_authors(article)
             doi = _extract_pubmed_article_doi(article)
+            update_in_pmids, update_of_pmids = _extract_pubmed_update_relationships(article)
 
             citations.append(
                 Citation(
@@ -342,6 +343,8 @@ class NcbiClient:
                     publication_types=_find_publication_types(article),
                     source_for_roles="pubmed",
                     doi=doi or None,
+                    update_in_pmids=update_in_pmids,
+                    update_of_pmids=update_of_pmids,
                 )
             )
 
@@ -610,6 +613,23 @@ def _extract_pmc_article_doi(xml_text: str) -> str:
         if doi:
             return doi
     return ""
+
+
+def _extract_pubmed_update_relationships(article: ET.Element) -> tuple[set[str], set[str]]:
+    update_in_pmids: set[str] = set()
+    update_of_pmids: set[str] = set()
+
+    for node in article.findall(".//CommentsCorrectionsList/CommentsCorrections"):
+        ref_type = (node.attrib.get("RefType") or node.attrib.get("reftype") or "").strip().lower()
+        related_pmid = _clean_text(_find_text(node, "PMID"))
+        if not related_pmid:
+            continue
+        if ref_type == "updatein":
+            update_in_pmids.add(related_pmid)
+        elif ref_type == "updateof":
+            update_of_pmids.add(related_pmid)
+
+    return update_in_pmids, update_of_pmids
 
 
 def _find_publication_types(article: ET.Element) -> list[str]:
