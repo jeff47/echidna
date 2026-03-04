@@ -173,6 +173,44 @@ def test_match_affiliations_supports_likely_contains_and_possible_levels() -> No
     assert "102" not in matches
 
 
+def test_match_affiliations_rejects_generic_term_overlap() -> None:
+    class FakeOrcidClient(OrcidClient):
+        def fetch_affiliation_organizations(self, target_orcid: str) -> list[OrcidOrganization]:
+            _ = target_orcid
+            return _extract_affiliation_organizations(
+                {
+                    "activities-summary": {
+                        "employments": {
+                            "affiliation-group": [
+                                {
+                                    "summaries": [
+                                        {
+                                            "employment-summary": {
+                                                "organization": {
+                                                    "name": "Harvard Medical School",
+                                                    "address": {"country": "US"},
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            )
+
+    client = FakeOrcidClient(client_id="id", client_secret="secret")
+    matches = client.match_affiliations(
+        "0000-0001-2345-6789",
+        {
+            "200": ["Department of Medicine, University School of Medicine, Boston, MA, USA"],
+        },
+    )
+
+    assert "200" not in matches
+
+
 def test_extract_expanded_search_matches_parses_profiles() -> None:
     payload = {
         "expanded-result": [

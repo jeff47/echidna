@@ -11,7 +11,14 @@ from typing import Any
 
 import httpx
 
-from app.logic import _extract_institution_names, _institution_key, normalize_orcid, normalize_text, parse_target_name
+from app.logic import (
+    _extract_institution_names,
+    _has_distinctive_institution_overlap,
+    _institution_key,
+    normalize_orcid,
+    normalize_text,
+    parse_target_name,
+)
 from app.models import Citation
 
 DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
@@ -596,7 +603,9 @@ def _match_affiliation_set(
             contains_candidates = [
                 org
                 for org in organizations
-                if len(org.key) >= 10 and (org.key in inst_key or inst_key in org.key)
+                if len(org.key) >= 10
+                and (org.key in inst_key or inst_key in org.key)
+                and _has_distinctive_institution_overlap(institution_name, org.name)
             ]
             if contains_candidates:
                 chosen = max(contains_candidates, key=lambda org: len(org.key))
@@ -610,6 +619,8 @@ def _match_affiliation_set(
             if not inst_signature:
                 continue
             for org in organizations:
+                if not _has_distinctive_institution_overlap(institution_name, org.name):
+                    continue
                 ratio = SequenceMatcher(a=inst_signature, b=org.signature).ratio()
                 if ratio < 0.9:
                     continue

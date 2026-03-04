@@ -29,6 +29,7 @@ from app.logic import (
     parse_target_name,
     parse_target_orcid,
     _institution_key,
+    _has_distinctive_institution_overlap,
 )
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
@@ -754,7 +755,7 @@ def _build_cluster_affiliation_display_rows(
                     continue
                 if key == entry_key:
                     candidate_level = entry_level
-                elif entry_key in key or key in entry_key:
+                elif (entry_key in key or key in entry_key) and _has_distinctive_institution_overlap(affiliation, entry_name):
                     candidate_level = "contains"
                 else:
                     continue

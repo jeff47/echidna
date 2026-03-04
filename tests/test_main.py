@@ -10,6 +10,7 @@ from app.logic import AnalysisResult
 from app.main import app as fastapi_app
 from app.main import (
     RunState,
+    _build_cluster_affiliation_display_rows,
     _build_citation_selection_rows,
     _build_cluster_citation_rows,
     _build_cluster_orcid_affiliation_matches,
@@ -20,7 +21,7 @@ from app.main import (
     _with_row_render_fields,
     _xlsx_download_filename,
 )
-from app.models import Author, AuthorMatch, Citation, ReportRow
+from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow
 
 
 def _citation(pmid: str, *, year: int = 2024) -> Citation:
@@ -158,6 +159,38 @@ def test_cluster_orcid_affiliation_matches_dedupes_institutions_and_keeps_strong
             "level": "possible",
         },
     ]
+
+
+def test_cluster_affiliation_display_rows_ignores_generic_contains_overlap() -> None:
+    clusters = [
+        Cluster(
+            cluster_id="cluster-a",
+            label="Rice, Jeffrey",
+            mention_count=1,
+            years=[2024],
+            affiliations=["Department of Medicine, University School of Medicine"],
+        )
+    ]
+    cluster_orcid_affiliation_matches = {
+        "cluster-a": [
+            {
+                "key": "harvardmedicalschool",
+                "name": "Harvard Medical School",
+                "level": "likely",
+            }
+        ]
+    }
+
+    rows_by_cluster = _build_cluster_affiliation_display_rows(
+        clusters=clusters,
+        cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
+        target_orcid="0000-0001-2345-6789",
+    )
+    rows = rows_by_cluster["cluster-a"]
+
+    assert len(rows) == 1
+    assert rows[0]["matched"] is False
+    assert rows[0]["match_level"] == ""
 
 
 def test_orcid_row_fields_hides_citation_badge_for_affiliation_only_match() -> None:

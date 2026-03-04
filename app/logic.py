@@ -58,6 +58,36 @@ UNIT_WORDS = (
     "section",
     "unit",
 )
+GENERIC_INSTITUTION_TOKENS = {
+    "and",
+    "at",
+    "center",
+    "centre",
+    "college",
+    "department",
+    "departments",
+    "division",
+    "faculty",
+    "for",
+    "health",
+    "hospital",
+    "in",
+    "institute",
+    "institutes",
+    "lab",
+    "laboratory",
+    "medical",
+    "medicine",
+    "of",
+    "program",
+    "school",
+    "state",
+    "system",
+    "the",
+    "university",
+    "unit",
+}
+SHORT_DISTINCTIVE_TOKENS = {"nih", "nyu", "mit", "ucla", "ucsf"}
 
 
 def normalize_token(value: str) -> str:
@@ -331,6 +361,31 @@ def _institution_key(value: str) -> str:
     normalized = AMPERSAND.sub(" and ", normalized)
     normalized = APOSTROPHE_VARIANTS.sub("'", normalized)
     return normalize_token(normalized)
+
+
+def _institution_distinctive_tokens(value: str) -> set[str]:
+    normalized = normalize_text(value)
+    normalized = AMPERSAND.sub(" and ", normalized)
+    normalized = APOSTROPHE_VARIANTS.sub("'", normalized)
+    raw_tokens = [token for token in re.split(r"[^a-z0-9]+", normalized) if token]
+    distinctive: set[str] = set()
+    for token in raw_tokens:
+        if token in GENERIC_INSTITUTION_TOKENS:
+            continue
+        if token.isdigit():
+            continue
+        if len(token) < 3 and token not in SHORT_DISTINCTIVE_TOKENS:
+            continue
+        distinctive.add(token)
+    return distinctive
+
+
+def _has_distinctive_institution_overlap(left: str, right: str) -> bool:
+    left_tokens = _institution_distinctive_tokens(left)
+    right_tokens = _institution_distinctive_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    return bool(left_tokens & right_tokens)
 
 
 def _clean_clause_label(clause: str) -> str:
