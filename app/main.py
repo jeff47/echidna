@@ -76,12 +76,12 @@ CITATION_SOURCE_BADGE_META: dict[str, dict[str, str]] = {
     "user": {
         "label": "user",
         "class": "source-badge source-user",
-        "title": "Provided in user PMID input",
+        "title": "Citation added from user file",
     },
     "litsense": {
         "label": "litsense",
         "class": "source-badge source-litsense",
-        "title": "Matched in LitSense author query (PMID seed and/or ORCiD)",
+        "title": "Citation added from LitSense",
     },
 }
 
@@ -156,7 +156,9 @@ def _orcid_badge_title(
     affiliation_label: str,
 ) -> str:
     if has_identifier_match:
-        return f"ORCiD matched by {identifier_label}" if identifier_label else "ORCiD identifier match"
+        if identifier_label:
+            return f"Citation added from ORCiD record (matched by {identifier_label})"
+        return "Citation added from ORCiD record"
     if affiliation_level and affiliation_label:
         return f"ORCiD affiliation {affiliation_level}: {affiliation_label}"
     if affiliation_level:

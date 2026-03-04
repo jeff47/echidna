@@ -136,7 +136,7 @@
     {% if excluded_by_type and excluded_by_type > 0 %}
       <p class="muted">
         {{ excluded_by_type }} citation(s) were excluded by publication-type filter.
-        {% if excluded_citation_rows %}
+        {% if excluded_citation_rows_by_type %}
           <a href="#excluded-citations">View excluded citations</a>.
         {% endif %}
       </p>
@@ -194,9 +194,9 @@
             {% endif %}
           </div>
         {% endfor %}
-        {% if excluded_citation_rows %}
+        {% if excluded_citation_rows_by_type %}
           <h2 id="excluded-citations">Excluded Citations (Optional Override)</h2>
-          <p class="muted">These matched citations were excluded before disambiguation (year/type filters). Check any citation below to force include it in downstream analysis.</p>
+          <p class="muted">These matched citations were excluded before disambiguation by publication-type filters. Check any citation below to force include it in downstream analysis.</p>
           <details class="excluded-group" {% if excluded_citation_rows_by_type %}open{% endif %}>
             <summary>Excluded By Publication Type ({{ excluded_citation_rows_by_type|length }})</summary>
             <div class="group-body">
@@ -242,96 +242,6 @@
               {% endif %}
             </div>
           </details>
-
-          <details class="excluded-group" {% if excluded_citation_rows_by_window %}open{% endif %}>
-            <summary>Excluded By Date Window ({{ excluded_citation_rows_by_window|length }})</summary>
-            <div class="group-body">
-              {% if excluded_citation_rows_by_window %}
-                <div class="scroll-table-window">
-                  <table class="subtable">
-                    <thead>
-                      <tr>
-                        <th>Force Include</th>
-                        <th>Year</th>
-                        <th>Journal</th>
-                        <th>Title</th>
-                        <th>PMID / PMCID</th>
-                        <th>Source</th>
-                        <th>Exclusion Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for row in excluded_citation_rows_by_window %}
-                        <tr class="excluded">
-                          <td><input type="checkbox" name="selected_excluded_pmids" value="{{ row.pmid }}" {% if row.pmid in selected_excluded_pmids %}checked{% endif %}></td>
-                          <td>{{ row.year if row.year else 'n/a' }}</td>
-                          <td>{{ row.journal }}</td>
-                          <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a></td>
-                          <td>
-                            <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
-                            {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
-                          </td>
-                          <td class="source-cell">
-                            <div class="source-stack">
-                              {% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
-                              {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
-                            </div>
-                          </td>
-                          <td>{{ row.reason }}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              {% else %}
-                <p class="muted">No matched citations were excluded by date window.</p>
-              {% endif %}
-            </div>
-          </details>
-
-          {% if excluded_citation_rows_other %}
-            <details class="excluded-group" open>
-              <summary>Other Exclusions ({{ excluded_citation_rows_other|length }})</summary>
-              <div class="group-body">
-                <div class="scroll-table-window">
-                  <table class="subtable">
-                    <thead>
-                      <tr>
-                        <th>Force Include</th>
-                        <th>Year</th>
-                        <th>Journal</th>
-                        <th>Title</th>
-                        <th>PMID / PMCID</th>
-                        <th>Source</th>
-                        <th>Exclusion Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for row in excluded_citation_rows_other %}
-                        <tr class="excluded">
-                          <td><input type="checkbox" name="selected_excluded_pmids" value="{{ row.pmid }}" {% if row.pmid in selected_excluded_pmids %}checked{% endif %}></td>
-                          <td>{{ row.year if row.year else 'n/a' }}</td>
-                          <td>{{ row.journal }}</td>
-                          <td><a href="{{ row.pmid_link }}" target="_blank" rel="noopener">{{ row.title }}</a></td>
-                          <td>
-                            <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
-                            {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
-                          </td>
-                          <td class="source-cell">
-                            <div class="source-stack">
-                              {% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
-                              {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
-                            </div>
-                          </td>
-                          <td>{{ row.reason }}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </details>
-          {% endif %}
         {% endif %}
         <button type="submit">Continue</button>
       </form>

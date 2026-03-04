@@ -26,6 +26,8 @@
     .action-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.75rem 0; }
     .action-row button { margin-top: 0; }
     .summary-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    #summary-line { margin: 0; font-weight: 400; }
+    .summary-disclaimer { margin: 0.45rem 0 0.9rem; color: #52606d; font-size: 0.88rem; }
     #copy-summary-btn {
       margin-top: 0;
       width: 2rem;
@@ -134,7 +136,7 @@
   <div class="card">
     <div class="header-row"><h1>ECHIDNA Publication Report</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
     <div class="summary-row">
-      <p><strong id="summary-line">{{ summary }}</strong></p>
+      <p id="summary-line">{{ summary }}</p>
       <button type="button" id="copy-summary-btn" title="Copy summary" aria-label="Copy summary">
         <svg class="icon-copy" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="9" y="7" width="10" height="12" rx="2" stroke="currentColor" stroke-width="2"></rect>
@@ -145,6 +147,7 @@
         </svg>
       </button>
     </div>
+    <p class="summary-disclaimer">Disclaimer: this report may contain mistakes. Co-first and co-senior author counts may be inaccurate due to differences in how publishers and databases report author-contribution roles.</p>
     {% if out_of_window_rows %}
       <p><strong>{{ out_of_window_rows|length }}</strong> selected citation(s) were excluded because print year is outside {{ start_year }}-{{ end_year }}.</p>
       <table>
