@@ -16,6 +16,7 @@ from app.main import (
     _build_out_of_window_rows,
     _orcid_row_fields,
     _partition_excluded_citation_rows,
+    _selected_default_excluded_type_terms,
     _with_row_render_fields,
     _xlsx_download_filename,
 )
@@ -311,6 +312,13 @@ def test_partition_excluded_citation_rows_splits_type_and_window() -> None:
     assert [str(row["pmid"]) for row in by_type] == ["1"]
     assert [str(row["pmid"]) for row in by_window] == ["2"]
     assert [str(row["pmid"]) for row in other] == ["3"]
+
+
+def test_selected_default_excluded_type_terms_preserves_default_order_and_filters_unknown() -> None:
+    options = ["preprint", "editorial", "comment", "letter"]
+    selected = _selected_default_excluded_type_terms(["COMMENT", "letter", "unknown"], options)
+
+    assert selected == ["comment", "letter"]
 
 
 def test_build_out_of_window_rows_preserves_user_source_badge() -> None:

@@ -70,6 +70,7 @@ RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 YEAR_OPTION_MIN = 1950
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LANDING_IMAGE_PATH = PROJECT_ROOT / "echidna.jpg"
+FAVICON_PATH = PROJECT_ROOT / "favicon.ico"
 ORCID_AFFILIATION_LEVEL_RANK = {"verified": 4, "likely": 3, "contains": 2, "possible": 1}
 CITATION_SOURCE_ORDER = ("user", "litsense")
 CITATION_SOURCE_BADGE_META: dict[str, dict[str, str]] = {
@@ -111,6 +112,23 @@ def _year_window_label(start_year: int | None, end_year: int | None) -> str:
     if start_year is None or end_year is None:
         return "all years"
     return f"{start_year}-{end_year}"
+
+
+def _selected_default_excluded_type_terms(submitted: list[str], options: list[str]) -> list[str]:
+    selected = set(parse_type_terms("\n".join(submitted)))
+    return [term for term in options if term in selected]
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for term in terms:
+        normalized = term.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _dict_row_sort_key(row: dict[str, object]) -> tuple[bool, int, str]:
@@ -1217,6 +1235,7 @@ def _render_analysis_result(
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     year = date.today().year
+    default_excluded_type_options = default_excluded_type_terms()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -1229,6 +1248,8 @@ def index(request: Request) -> HTMLResponse:
             "peer_reviewed_only": True,
             "all_years": False,
             "extra_excluded_types": "",
+            "default_excluded_type_options": default_excluded_type_options,
+            "selected_default_excluded_types": list(default_excluded_type_options),
             "year_options": _year_options(),
             "error": None,
         },
@@ -1263,6 +1284,13 @@ def landing_image() -> FileResponse:
     return FileResponse(LANDING_IMAGE_PATH, media_type="image/jpeg")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    if not FAVICON_PATH.is_file():
+        raise HTTPException(status_code=404, detail="favicon.ico not found")
+    return FileResponse(FAVICON_PATH, media_type="image/x-icon")
+
+
 @app.post("/disambiguate", response_class=HTMLResponse)
 def disambiguate(
     request: Request,
@@ -1274,12 +1302,21 @@ def disambiguate(
     end_year: int = Form(...),
     all_years: str | None = Form(default=None),
     peer_reviewed_only: str | None = Form(default=None),
+    default_excluded_types: list[str] = Form(default=[]),
+    default_excluded_types_present: str | None = Form(default=None),
     extra_excluded_types: str = Form(default=""),
 ) -> HTMLResponse:
     all_years_enabled = all_years is not None
     peer_reviewed_only_enabled = peer_reviewed_only is not None
-    excluded_type_terms = default_excluded_type_terms()
-    excluded_type_terms.extend(parse_type_terms(extra_excluded_types))
+    default_excluded_type_options = default_excluded_type_terms()
+    if default_excluded_types_present is None and peer_reviewed_only_enabled:
+        # Backward compatibility for non-UI clients that only send peer_reviewed_only.
+        selected_default_excluded_types = list(default_excluded_type_options)
+    else:
+        selected_default_excluded_types = _selected_default_excluded_type_terms(
+            default_excluded_types, default_excluded_type_options
+        )
+    excluded_type_terms = _dedupe_terms(selected_default_excluded_types + parse_type_terms(extra_excluded_types))
     logger.info(
         "Disambiguation request received: author=%r, target_orcid=%r, start_year=%s, end_year=%s, all_years=%s, peer_reviewed_only=%s",
         author_name,
@@ -1305,6 +1342,8 @@ def disambiguate(
                 "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
+                "default_excluded_type_options": default_excluded_type_options,
+                "selected_default_excluded_types": selected_default_excluded_types,
                 "year_options": _year_options(),
                 "error": str(exc),
             },
@@ -1328,6 +1367,8 @@ def disambiguate(
                 "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
+                "default_excluded_type_options": default_excluded_type_options,
+                "selected_default_excluded_types": selected_default_excluded_types,
                 "year_options": _year_options(),
                 "error": "No PMIDs found in text input or uploaded file",
             },
@@ -1347,6 +1388,8 @@ def disambiguate(
                 "peer_reviewed_only": peer_reviewed_only_enabled,
                 "all_years": all_years_enabled,
                 "extra_excluded_types": extra_excluded_types,
+                "default_excluded_type_options": default_excluded_type_options,
+                "selected_default_excluded_types": selected_default_excluded_types,
                 "year_options": _year_options(),
                 "error": "Start Year must be less than or equal to End Year",
             },

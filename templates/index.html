@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ECHIDNA</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <style>
     :root {
       --bg: #f4f5f7;
@@ -167,6 +168,32 @@
 
     .inline-label a:hover {
       text-decoration: underline;
+    }
+
+    .excluded-types-panel {
+      margin-top: 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 0.4rem 0.55rem;
+    }
+
+    .excluded-types-panel > summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .excluded-type-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.35rem 0.6rem;
+      margin-top: 0.55rem;
+    }
+
+    .excluded-type-option {
+      font-weight: 500;
+      font-size: 0.92rem;
     }
 
     button {
@@ -464,8 +491,20 @@
 
         <label class="checkbox-row">
           <input type="checkbox" name="peer_reviewed_only" value="1" {% if peer_reviewed_only %}checked{% endif %}>
-          Peer-reviewed only (exclude preprints, editorials, comments, letters, news, etc.)
+          Peer-reviewed only
         </label>
+        <input type="hidden" name="default_excluded_types_present" value="1">
+        <details class="excluded-types-panel">
+          <summary>Default publication types to exclude (checked by default)</summary>
+          <div class="excluded-type-grid">
+            {% for type_term in default_excluded_type_options %}
+              <label class="checkbox-row excluded-type-option">
+                <input type="checkbox" name="default_excluded_types" value="{{ type_term }}" {% if type_term in selected_default_excluded_types %}checked{% endif %}>
+                {{ type_term }}
+              </label>
+            {% endfor %}
+          </div>
+        </details>
 
         <label for="extra_excluded_types" class="inline-label">
           Extra Publication Types To Ignore (optional)
@@ -494,7 +533,7 @@
             </li>
             <li>Set year bounds, or check all-years to ignore the year filter.</li>
             <li>Paste PMIDs or upload a text file with one PMID per line.</li>
-            <li>Choose filtering options (peer-reviewed only and extra publication types to ignore).</li>
+            <li>Choose filtering options (peer-reviewed toggle, expandable default exclusion checklist, and optional extra publication types to ignore).</li>
             <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
           </ul>
           <div class="help-actions">
