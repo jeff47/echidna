@@ -33,6 +33,7 @@ UNIT_PREFIX_PATTERN = re.compile(
 TRAILING_PUNCT = re.compile(r"[.;,\s]+$")
 AMPERSAND = re.compile(r"\s*&\s*")
 APOSTROPHE_VARIANTS = re.compile(r"[’`´]")
+AFFILIATION_PIECE_SPLIT = re.compile(r"[;|]+")
 INSTITUTION_HINTS = (
     "university",
     "hospital",
@@ -88,6 +89,18 @@ GENERIC_INSTITUTION_TOKENS = {
     "unit",
 }
 SHORT_DISTINCTIVE_TOKENS = {"nih", "nyu", "mit", "ucla", "ucsf"}
+UC_CAMPUS_ALIASES = {
+    "berkeley": "Berkeley",
+    "davis": "Davis",
+    "irvine": "Irvine",
+    "los angeles": "Los Angeles",
+    "merced": "Merced",
+    "riverside": "Riverside",
+    "san diego": "San Diego",
+    "san francisco": "San Francisco",
+    "santa barbara": "Santa Barbara",
+    "santa cruz": "Santa Cruz",
+}
 
 
 def normalize_token(value: str) -> str:
@@ -315,11 +328,12 @@ def affiliation_fingerprint(affiliation: str) -> str:
 
 
 def _extract_institution_names(affiliation: str) -> list[str]:
-    pieces = [piece.strip() for piece in affiliation.split(";") if piece.strip()]
+    pieces = [piece.strip() for piece in AFFILIATION_PIECE_SPLIT.split(affiliation) if piece.strip()]
+    uc_campus_hint = _uc_campus_from_clauses(pieces)
     names: list[str] = []
     seen_keys: set[str] = set()
     for piece in pieces:
-        candidates = _institution_candidates(piece)
+        candidates = _institution_candidates(piece, uc_campus_hint=uc_campus_hint)
         if not candidates:
             continue
         strong = [c for c in candidates if c[0] >= 3]
@@ -332,11 +346,11 @@ def _extract_institution_names(affiliation: str) -> list[str]:
     return names
 
 
-def _institution_candidates(piece: str) -> list[tuple[int, str, str]]:
+def _institution_candidates(piece: str, *, uc_campus_hint: str = "") -> list[tuple[int, str, str]]:
     clauses = [clause.strip() for clause in piece.split(",") if clause.strip()]
     candidates: list[tuple[int, str, str]] = []
     for clause in clauses:
-        display = _normalize_institution_label(clause)
+        display = _expand_institution_clause(clause, clauses, uc_campus_hint=uc_campus_hint)
         normalized = normalize_text(display)
         if not normalized:
             continue
@@ -354,6 +368,27 @@ def _institution_candidates(piece: str) -> list[tuple[int, str, str]]:
             continue
         candidates.append((score, key, display))
     return candidates
+
+
+def _expand_institution_clause(clause: str, clauses: list[str], *, uc_campus_hint: str = "") -> str:
+    display = _normalize_institution_label(clause)
+    normalized = normalize_text(display)
+    if normalized in {"university of california", "university of california system"}:
+        campus = _uc_campus_from_clauses(clauses) or uc_campus_hint
+        if campus:
+            return f"University of California, {campus}"
+    return display
+
+
+def _uc_campus_from_clauses(clauses: list[str]) -> str:
+    for clause in clauses:
+        normalized_clause = normalize_text(_normalize_institution_label(clause))
+        if not normalized_clause:
+            continue
+        for alias, campus in UC_CAMPUS_ALIASES.items():
+            if alias in normalized_clause:
+                return campus
+    return ""
 
 
 def _institution_key(value: str) -> str:
@@ -480,7 +515,7 @@ def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
         if not names:
             names = [
                 _normalize_institution_label(part)
-                for part in raw_affiliation.split(";")
+                for part in AFFILIATION_PIECE_SPLIT.split(raw_affiliation)
                 if _normalize_institution_label(part)
             ]
         for name in names:

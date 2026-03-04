@@ -379,6 +379,24 @@ def _parse_correction_entries(correction_entries: list[str]) -> dict[str, str]:
     return corrections_by_pmid
 
 
+def _apply_uncertain_selection_and_corrections(
+    *,
+    analysis: AnalysisResult,
+    accepted_row_indices: set[int],
+    correction_entries: list[str],
+) -> None:
+    corrections_by_pmid = _parse_correction_entries(correction_entries)
+    for idx in analysis.uncertain_indices:
+        row = analysis.rows[idx]
+        row.include = idx in accepted_row_indices
+        if not row.include:
+            continue
+        mode = corrections_by_pmid.get(row.citation.pmid)
+        if not mode:
+            continue
+        _apply_correction_mode(row, mode)
+
+
 def _rebuild_analysis_with_overrides(
     *,
     run: RunState,
@@ -1865,6 +1883,7 @@ def finalize(
     selected_excluded_pmids: list[str] = Form(default=[]),
     pmid_filter_enabled: int = Form(default=0),
     accepted_row_indices: list[int] = Form(default=[]),
+    correction_entries: list[str] = Form(default=[]),
 ) -> HTMLResponse:
     run = _load_run(run_id)
     selected = set(selected_cluster_ids)
@@ -1872,13 +1891,14 @@ def finalize(
     forced_excluded_pmids = set(selected_excluded_pmids)
     accepted = set(accepted_row_indices)
     logger.info(
-        "Finalize request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, pmid_filter_enabled=%d, accepted_uncertain=%d",
+        "Finalize request: run_id=%s, selected_clusters=%d, selected_pmids=%d, forced_excluded=%d, pmid_filter_enabled=%d, accepted_uncertain=%d, corrections=%d",
         run_id,
         len(selected),
         len(selected_pmid_set),
         len(forced_excluded_pmids),
         pmid_filter_enabled,
         len(accepted),
+        len(correction_entries),
     )
 
     filtered_matches = _filter_matches_for_analysis(
@@ -1899,8 +1919,11 @@ def finalize(
         excluded_pmids=run.excluded_pmids,
     )
 
-    for idx in analysis.uncertain_indices:
-        analysis.rows[idx].include = idx in accepted
+    _apply_uncertain_selection_and_corrections(
+        analysis=analysis,
+        accepted_row_indices=accepted,
+        correction_entries=correction_entries,
+    )
     out_of_window_rows = _build_out_of_window_rows(
         citations=run.citations,
         matches=filtered_matches,

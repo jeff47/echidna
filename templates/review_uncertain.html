@@ -136,6 +136,7 @@
             <th>Date</th>
             <th>Authors</th>
             <th>Counted As</th>
+            <th>Correction</th>
             <th>Source</th>
             <th>Notes</th>
           </tr>
@@ -153,6 +154,15 @@
               <td>{{ row.print_date }}</td>
               <td>{{ row.authors_html|safe }}</td>
               <td>{{ row.counted_as }}</td>
+              <td>
+                <select name="correction_entries">
+                  <option value="{{ row.pmid }}::exclude" {% if row.correction_default == 'exclude' %}selected{% endif %}>exclude</option>
+                  <option value="{{ row.pmid }}::coauthor" {% if row.correction_default == 'coauthor' %}selected{% endif %}>coauthor</option>
+                  <option value="{{ row.pmid }}::first_senior_author" {% if row.correction_default == 'first_senior_author' %}selected{% endif %}>1st/Sr author</option>
+                  <option value="{{ row.pmid }}::coauthor_review" {% if row.correction_default == 'coauthor_review' %}selected{% endif %}>coauthor review</option>
+                  <option value="{{ row.pmid }}::first_senior_review" {% if row.correction_default == 'first_senior_review' %}selected{% endif %}>1st/Sr review</option>
+                </select>
+              </td>
               <td>{{ row.role_source }}</td>
               <td>{{ row.notes }}</td>
             </tr>
@@ -173,6 +183,7 @@
         <ul>
           <li>Checked rows will be included in the final report.</li>
           <li>Use the header checkbox to include/exclude all uncertain rows at once.</li>
+          <li>Use <strong>Correction</strong> to set counted category for included uncertain citations.</li>
           <li>Select <strong>Generate Final Summary</strong> to produce the publication report.</li>
         </ul>
         <div class="help-actions">

@@ -283,6 +283,52 @@ def test_affiliation_fingerprint_collapses_ampersand_and_apostrophe_variants() -
     assert left == right
 
 
+def test_cluster_affiliation_labels_keep_uc_davis_from_split_university_clause() -> None:
+    target = parse_target_name("Kevin O'Connor")
+    citations = [
+        _citation(
+            "33788616",
+            2021,
+            [
+                _author(
+                    1,
+                    "O'Connor",
+                    "Kevin",
+                    "K",
+                    "Department of Neurobiology, Physiology and Behavior, University of California, Davis, CA 95616, USA",
+                )
+            ],
+        )
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    assert len(clusters) == 1
+    assert "University of California, Davis" in clusters[0].affiliations
+
+
+def test_cluster_affiliation_labels_infer_uc_davis_from_city_plus_system() -> None:
+    target = parse_target_name("Kevin O'Connor")
+    citations = [
+        _citation(
+            "39963949",
+            2025,
+            [
+                _author(
+                    1,
+                    "O'Connor",
+                    "Kevin",
+                    "K",
+                    "Davis, California 95618 | Department of Neurobiology, Physiology and Behavior | University of California System",
+                )
+            ],
+        )
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    assert len(clusters) == 1
+    assert "University of California, Davis" in clusters[0].affiliations
+
+
 def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
     target = parse_target_name("Kevin O'Connor")
     citations = [

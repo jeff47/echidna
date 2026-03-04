@@ -10,6 +10,7 @@ from app.logic import AnalysisResult
 from app.main import app as fastapi_app
 from app.main import (
     RunState,
+    _apply_uncertain_selection_and_corrections,
     _build_cluster_affiliation_display_rows,
     _build_citation_selection_rows,
     _build_cluster_citation_rows,
@@ -312,6 +313,45 @@ def test_with_row_render_fields_includes_source_badges() -> None:
     source_badges = cast(list[dict[str, object]], rows[0]["source_badges"])
     labels = [str(item["label"]) for item in source_badges]
     assert labels == ["user", "litsense"]
+
+
+def test_apply_uncertain_selection_and_corrections_applies_mode_only_to_included_rows() -> None:
+    uncertain_included = ReportRow(
+        citation=_citation("401"),
+        counted_overall=False,
+        counted_first=False,
+        counted_senior=False,
+        counted_review_senior=False,
+        is_review=False,
+        uncertainty_reasons=["matched by initials fallback"],
+        include=False,
+    )
+    uncertain_excluded = ReportRow(
+        citation=_citation("402"),
+        counted_overall=False,
+        counted_first=False,
+        counted_senior=False,
+        counted_review_senior=False,
+        is_review=False,
+        uncertainty_reasons=["multiple matching authors"],
+        include=False,
+    )
+    analysis = AnalysisResult(rows=[uncertain_included, uncertain_excluded], uncertain_indices=[0, 1])
+
+    _apply_uncertain_selection_and_corrections(
+        analysis=analysis,
+        accepted_row_indices={0},
+        correction_entries=["401::first_senior_author", "402::coauthor"],
+    )
+
+    assert analysis.rows[0].include is True
+    assert analysis.rows[0].counted_overall is True
+    assert analysis.rows[0].counted_senior is True
+    assert analysis.rows[0].is_review is False
+
+    # Excluded uncertain rows remain excluded regardless of dropdown value.
+    assert analysis.rows[1].include is False
+    assert analysis.rows[1].counted_overall is False
 
 
 def test_build_cluster_citation_rows_includes_source_badges() -> None:
