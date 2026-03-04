@@ -884,6 +884,24 @@ def _build_excluded_citation_rows(
     return rows
 
 
+def _partition_excluded_citation_rows(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    by_publication_type: list[dict[str, object]] = []
+    by_date_window: list[dict[str, object]] = []
+    other: list[dict[str, object]] = []
+    for row in rows:
+        reason = str(row.get("reason", "")).strip().lower()
+        if reason.startswith("excluded by publication type"):
+            by_publication_type.append(row)
+            continue
+        if reason.startswith("outside year window"):
+            by_date_window.append(row)
+            continue
+        other.append(row)
+    return by_publication_type, by_date_window, other
+
+
 def _filter_matches_for_analysis(
     *,
     run: RunState,
@@ -1524,6 +1542,11 @@ def disambiguate(
         orcid_affiliation_matches=orcid_affiliation_matches,
         target_orcid=target_orcid,
     )
+    (
+        excluded_citation_rows_by_type,
+        excluded_citation_rows_by_window,
+        excluded_citation_rows_other,
+    ) = _partition_excluded_citation_rows(excluded_citation_rows)
     logger.info(
         "Disambiguation computed: citations=%d, matches=%d, clusters=%d, errors=%d",
         len(citations),
@@ -1569,6 +1592,9 @@ def disambiguate(
             "errors": errors,
             "missing_affiliation_rows": missing_affiliation_rows,
             "excluded_citation_rows": excluded_citation_rows,
+            "excluded_citation_rows_by_type": excluded_citation_rows_by_type,
+            "excluded_citation_rows_by_window": excluded_citation_rows_by_window,
+            "excluded_citation_rows_other": excluded_citation_rows_other,
             "selected_excluded_pmids": [],
             "excluded_out_of_window": excluded_out_of_window,
             "excluded_by_type": excluded_by_type,
@@ -1614,6 +1640,11 @@ def citation_select(
             orcid_affiliation_matches=run.orcid_affiliation_matches,
             target_orcid=run.target_orcid,
         )
+        (
+            excluded_citation_rows_by_type,
+            excluded_citation_rows_by_window,
+            excluded_citation_rows_other,
+        ) = _partition_excluded_citation_rows(excluded_citation_rows)
         return templates.TemplateResponse(
             request,
             "disambiguate.html",
@@ -1630,6 +1661,9 @@ def citation_select(
                 "errors": ["Select at least one author identity cluster."],
                 "missing_affiliation_rows": [],
                 "excluded_citation_rows": excluded_citation_rows,
+                "excluded_citation_rows_by_type": excluded_citation_rows_by_type,
+                "excluded_citation_rows_by_window": excluded_citation_rows_by_window,
+                "excluded_citation_rows_other": excluded_citation_rows_other,
                 "selected_excluded_pmids": sorted(forced_excluded_pmids),
                 "excluded_out_of_window": 0,
                 "excluded_by_type": 0,

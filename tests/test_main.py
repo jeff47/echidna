@@ -13,7 +13,9 @@ from app.main import (
     _build_citation_selection_rows,
     _build_cluster_citation_rows,
     _build_cluster_orcid_affiliation_matches,
+    _build_out_of_window_rows,
     _orcid_row_fields,
+    _partition_excluded_citation_rows,
     _with_row_render_fields,
     _xlsx_download_filename,
 )
@@ -295,6 +297,44 @@ def test_build_cluster_citation_rows_includes_source_badges() -> None:
     labels = [str(item["label"]) for item in source_badges]
 
     assert labels == ["litsense"]
+
+
+def test_partition_excluded_citation_rows_splits_type_and_window() -> None:
+    rows: list[dict[str, object]] = [
+        {"pmid": "1", "reason": "Excluded by publication type: Editorial"},
+        {"pmid": "2", "reason": "Outside year window 2020-2026"},
+        {"pmid": "3", "reason": "Excluded by pre-disambiguation filter"},
+    ]
+
+    by_type, by_window, other = _partition_excluded_citation_rows(rows)
+
+    assert [str(row["pmid"]) for row in by_type] == ["1"]
+    assert [str(row["pmid"]) for row in by_window] == ["2"]
+    assert [str(row["pmid"]) for row in other] == ["3"]
+
+
+def test_build_out_of_window_rows_preserves_user_source_badge() -> None:
+    citation = _citation("204", year=2018)
+    citation.source_tags = {"user"}
+    match = AuthorMatch(
+        pmid="204",
+        position=1,
+        method="given",
+        author=citation.authors[0],
+        cluster_id="cluster-a",
+    )
+
+    rows = _build_out_of_window_rows(
+        citations=[citation],
+        matches=[match],
+        start_year=2020,
+        end_year=2026,
+    )
+
+    assert len(rows) == 1
+    source_badges = cast(list[dict[str, object]], rows[0]["source_badges"])
+    labels = [str(item["label"]) for item in source_badges]
+    assert labels == ["user"]
 
 
 def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) -> None:

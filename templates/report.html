@@ -160,9 +160,11 @@
           {% for row in out_of_window_rows %}
             <tr class="excluded">
               <td>
-                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
-                {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+                {% if row.source_badges or row.orcid_badge_show %}<br>{% endif %}
+                {% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
+                {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
               </td>
               <td>{{ row.year if row.year else 'n/a' }}</td>
               <td>{{ row.journal }}</td>
@@ -215,9 +217,11 @@
           {% for row in rows %}
             <tr class="{% if not row.include %}excluded{% endif %}">
               <td>
-                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>{% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
-                {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
+                <a href="{{ row.pmid_link }}" target="_blank" rel="noopener">PMID {{ row.pmid }}</a>
                 {% if row.pmcid %}<br><a href="{{ row.pmcid_link }}" target="_blank" rel="noopener">{{ row.pmcid }}</a>{% endif %}
+                {% if row.source_badges or row.orcid_badge_show %}<br>{% endif %}
+                {% for badge in row.source_badges %}<span class="{{ badge.class }}" title="{{ badge.title }}">{{ badge.label }}</span>{% endfor %}
+                {% if row.orcid_badge_show %}<a class="{{ row.orcid_badge_class }}" href="{{ row.orcid_record_url }}" target="_blank" rel="noopener" title="{{ row.orcid_badge_title }}"><span class="orcid-badge-orc">ORC</span><span class="orcid-badge-id">iD</span></a>{% endif %}
               </td>
               <td>{{ row.title }}</td>
               <td>{{ row.journal }}</td>
