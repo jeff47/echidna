@@ -178,7 +178,7 @@
       padding: 0.4rem 0.55rem;
     }
 
-    .excluded-types-panel > summary {
+    .excluded-types-panel>summary {
       cursor: pointer;
       font-weight: 600;
       color: var(--text);
@@ -242,6 +242,12 @@
     .orcid-search-status {
       margin-top: 0.45rem;
       font-size: 0.85rem;
+    }
+
+    .orcid-search-note {
+      margin-top: 0.35rem;
+      font-size: 0.82rem;
+      color: var(--muted);
     }
 
     .orcid-search-panel {
@@ -444,6 +450,10 @@
 
         <div class="orcid-search-panel">
           <div id="orcid-search-status" class="muted orcid-search-status" aria-live="polite"></div>
+          <p id="orcid-search-visibility-note" class="orcid-search-note" hidden>
+            Note: ORCiD fields like institution may be unavailable if the author has not made them public. You may also
+            be able to find ORCiD numbers in QVR.
+          </p>
           <div id="orcid-search-results" class="orcid-search-results" hidden>
             <table>
               <thead>
@@ -494,10 +504,11 @@
           <summary>Publication types to exclude (non-peer reviewed excluded by default)</summary>
           <div class="excluded-type-grid">
             {% for type_term in default_excluded_type_options %}
-              <label class="checkbox-row excluded-type-option">
-                <input type="checkbox" name="default_excluded_types" value="{{ type_term }}" {% if type_term in selected_default_excluded_types %}checked{% endif %}>
-                {{ type_term }}
-              </label>
+            <label class="checkbox-row excluded-type-option">
+              <input type="checkbox" name="default_excluded_types" value="{{ type_term }}" {% if type_term in
+                selected_default_excluded_types %}checked{% endif %}>
+              {{ type_term }}
+            </label>
             {% endfor %}
           </div>
           <label for="extra_excluded_types" class="inline-label">
@@ -522,13 +533,15 @@
           <ul>
             <li>Enter the author name (and optional ORCiD).</li>
             <li>Accepted name formats include: <code>Anthony Fauci</code>, <code>Fauci A</code>, <code>Fauci AS</code>,
-              <code>Fauci, Anthony</code>, and <code>Fauci, A</code>.</li>
+              <code>Fauci, Anthony</code>, and <code>Fauci, A</code>.
+            </li>
             <li>To look up an ORCiD from the name, click <strong>Search ORCiD</strong>, review the returned profiles,
               then click <strong>Use ID</strong> to auto-fill the ORCiD field (the match list closes after selection).
             </li>
             <li>Set year bounds, or check all-years to ignore the year filter.</li>
             <li>Paste PMIDs or upload a text file with one PMID per line.</li>
-            <li>Adjust publication-type exclusions with the expandable checklist (checked by default) and optional extra publication types to ignore.</li>
+            <li>Adjust publication-type exclusions with the expandable checklist (checked by default) and optional extra
+              publication types to ignore.</li>
             <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
           </ul>
           <div class="help-actions">
@@ -588,6 +601,7 @@
     const authorOrcidInput = document.getElementById("author_orcid");
     const orcidSearchBtn = document.getElementById("orcid-search-btn");
     const orcidSearchStatus = document.getElementById("orcid-search-status");
+    const orcidSearchVisibilityNote = document.getElementById("orcid-search-visibility-note");
     const orcidSearchResults = document.getElementById("orcid-search-results");
     const orcidSearchResultsBody = document.getElementById("orcid-search-results-body");
     function clearOrcidSearchResults() {
@@ -649,6 +663,9 @@
     }
 
     async function runOrcidSearch() {
+      if (orcidSearchVisibilityNote) {
+        orcidSearchVisibilityNote.hidden = false;
+      }
       const name = (authorNameInput?.value || "").trim();
       if (name.length < 2) {
         clearOrcidSearchResults();

@@ -618,9 +618,29 @@ def _first_senior_detail(rows: list[ReportRow]) -> str:
     # Sort by descending count then journal name for deterministic output.
     for journal, years in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0].lower())):
         count = len(years)
-        valid_years = sorted({year for year in years if year >= 0})
-        if valid_years:
-            year_text = ", ".join(str(year) for year in valid_years)
+        year_counts: dict[int, int] = defaultdict(int)
+        unknown_year_count = 0
+        for year in years:
+            if year >= 0:
+                year_counts[year] += 1
+            else:
+                unknown_year_count += 1
+
+        year_tokens: list[str] = []
+        for year in sorted(year_counts):
+            year_count = year_counts[year]
+            if year_count > 1:
+                year_tokens.append(f"{year_count}x{year}")
+            else:
+                year_tokens.append(str(year))
+        if unknown_year_count > 0:
+            if unknown_year_count > 1:
+                year_tokens.append(f"{unknown_year_count}xn/a")
+            else:
+                year_tokens.append("n/a")
+
+        if year_tokens:
+            year_text = ", ".join(year_tokens)
             parts.append(f"{count} {journal} {year_text}")
         else:
             parts.append(f"{count} {journal}")

@@ -491,6 +491,19 @@ def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:
     assert "2 Nat Immunol 2025, 2026" in summary
 
 
+def test_format_summary_uses_nx_year_for_duplicate_journal_years() -> None:
+    rows = [
+        _row_summary("Sci Immunol", 2023, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("Sci Immunol", 2023, counted_overall=True, counted_first=False, counted_senior=True),
+        _row_summary("Sci Immunol", 2024, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("Sci Immunol", 2025, counted_overall=True, counted_first=False, counted_senior=True),
+        _row_summary("Sci Immunol", 2025, counted_overall=True, counted_first=True, counted_senior=False),
+    ]
+
+    summary = format_summary(rows, 2021, 2026)
+    assert "5 Sci Immunol 2x2023, 2024, 2x2025" in summary
+
+
 def test_citation_in_window_all_years_includes_missing_year() -> None:
     citation = _citation("w1", 2024, [])
     citation.print_year = None

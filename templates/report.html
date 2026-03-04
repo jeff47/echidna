@@ -48,6 +48,8 @@
 
     .header-row { display: flex; align-items: center; gap: 0.5rem; }
     .header-row h1 { margin: 0; }
+    .home-link { color: inherit; text-decoration: none; }
+    .home-link:hover { text-decoration: underline; }
     .help-icon {
       display: inline-flex;
       align-items: center;
@@ -134,7 +136,7 @@
 <body>
 <main>
   <div class="card">
-    <div class="header-row"><h1>ECHIDNA Publication Report</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
+    <div class="header-row"><h1><a class="home-link" href="/">ECHIDNA</a> Publication Report</h1><a id="help-link" class="help-icon" href="#help-overlay" aria-label="Open help" title="Help">?</a></div>
     <div class="summary-row">
       <p id="summary-line">{{ summary }}</p>
       <button type="button" id="copy-summary-btn" title="Copy summary" aria-label="Copy summary">
