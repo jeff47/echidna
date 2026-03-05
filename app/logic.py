@@ -711,7 +711,7 @@ def format_summary(
         f"Peer-reviewed Publications ({window_label}): {total} total, "
         f"{len(first_senior)} 1st/Sr author ({detail}). "
         f"In addition: {review_senior_total} review(s) as Sr author; "
-        f"{preprint_total} preprint(s) (separate subtotal, not included in peer-reviewed total)."
+        f"{preprint_total} preprint(s)."
     )
 
 
