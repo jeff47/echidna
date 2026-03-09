@@ -5,6 +5,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
+from affiliation_normalizer import match_affiliation
+
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, TargetName
 
 
@@ -327,30 +329,79 @@ def match_author(
 
 
 def affiliation_fingerprint(affiliation: str) -> str:
+    raw_affiliation = (affiliation or "").strip()
+    if not raw_affiliation:
+        return "no-affiliation"
+
     institutions = _extract_institution_names(affiliation)
     keys = sorted({_institution_key(name) for name in institutions if _institution_key(name)})
     if not keys:
-        return "no-affiliation"
+        fallback = _institution_key(raw_affiliation) or normalize_token(raw_affiliation)
+        return fallback[:120] if fallback else "no-affiliation"
     return "|".join(keys)[:120]
 
 
 def _extract_institution_names(affiliation: str) -> list[str]:
-    pieces = [piece.strip() for piece in AFFILIATION_PIECE_SPLIT.split(affiliation) if piece.strip()]
-    uc_campus_hint = _uc_campus_from_clauses(pieces)
+    raw_affiliation = affiliation.strip()
+    if not raw_affiliation:
+        return []
+
     names: list[str] = []
     seen_keys: set[str] = set()
-    for piece in pieces:
-        candidates = _institution_candidates(piece, uc_campus_hint=uc_campus_hint)
-        if not candidates:
+    for candidate in _affiliation_match_candidates(raw_affiliation):
+        result = match_affiliation(candidate)
+        if result.status != "matched" or not result.canonical_name:
             continue
-        strong = [c for c in candidates if c[0] >= 3]
-        selected = strong or [max(candidates, key=lambda item: item[0])]
-        for _, key, label in selected:
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            names.append(label)
-    return names
+        label = _normalize_institution_label(result.canonical_name)
+        key = _institution_key(label)
+        if not key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        names.append(label)
+
+    if names:
+        return names
+
+    # Support UC system strings where campus is present elsewhere in the AD line.
+    uc_campus = _uc_campus_from_text(raw_affiliation)
+    if uc_campus:
+        result = match_affiliation(f"University of California, {uc_campus}")
+        if result.status == "matched" and result.canonical_name:
+            return [_normalize_institution_label(result.canonical_name)]
+
+    return []
+
+
+def _affiliation_match_candidates(affiliation: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        normalized = _normalize_institution_label(value)
+        if not normalized:
+            return
+        key = normalized.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(normalized)
+
+    add(affiliation)
+    pieces = [piece.strip() for piece in AFFILIATION_PIECE_SPLIT.split(affiliation) if piece.strip()]
+    for piece in pieces:
+        add(piece)
+        for clause in piece.split(","):
+            add(clause)
+    return candidates
+
+
+def _uc_campus_from_text(value: str) -> str:
+    clauses: list[str] = []
+    for piece in AFFILIATION_PIECE_SPLIT.split(value):
+        if not piece.strip():
+            continue
+        clauses.extend(clause.strip() for clause in piece.split(",") if clause.strip())
+    return _uc_campus_from_clauses(clauses)
 
 
 def _institution_candidates(piece: str, *, uc_campus_hint: str = "") -> list[tuple[int, str, str]]:

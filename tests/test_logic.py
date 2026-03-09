@@ -268,7 +268,7 @@ def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
 
     assert len(clusters) == 1
     assert "Brigham and Women's Hospital" in clusters[0].affiliations
-    assert "Harvard Medical School" in clusters[0].affiliations
+    assert "Harvard University" in clusters[0].affiliations
     assert len(clusters[0].affiliations) <= 3
     assert not any("&" in label for label in clusters[0].affiliations)
 
@@ -363,7 +363,7 @@ def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
 
     labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
     assert "Bioplastech Ltd., Dublin, Ireland" in labels
-    assert "Department of Neurology Yale University School of Medicine New Haven Connecticut 06520 USA" in labels
+    assert "Yale University" in labels
 
 
 def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:

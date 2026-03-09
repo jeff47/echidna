@@ -167,9 +167,9 @@ def test_match_affiliations_supports_likely_contains_and_possible_levels() -> No
     assert matches["101"]["level"] == "possible"
     assert matches["101"]["institution"] == "Harvard Medical School"
     assert "name similarity" in matches["101"]["label"]
-    assert matches["103"]["level"] == "contains"
+    assert matches["103"]["level"] == "likely"
     assert matches["103"]["institution"] == "Brigham and Women's Hospital"
-    assert "affiliation contains institution" in matches["103"]["label"]
+    assert "institution match" in matches["103"]["label"]
     assert "102" not in matches
 
 

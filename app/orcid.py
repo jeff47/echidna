@@ -512,7 +512,12 @@ def _extract_affiliation_organizations(payload: dict[str, Any]) -> list[OrcidOrg
         raw_name = str(org.get("name", "")).strip()
         if not raw_name:
             continue
-        key = _institution_key(raw_name)
+        canonical_names = _extract_institution_names(raw_name)
+        display_name = _clean_org_name(raw_name)
+        match_basis = canonical_names[0] if canonical_names else display_name
+        key = _institution_key(match_basis)
+        if not key:
+            key = _institution_key(display_name)
         if not key:
             continue
 
@@ -533,9 +538,9 @@ def _extract_affiliation_organizations(payload: dict[str, Any]) -> list[OrcidOrg
 
         organizations.append(
             OrcidOrganization(
-                name=_clean_org_name(raw_name),
+                name=display_name,
                 key=key,
-                signature=_org_signature(raw_name),
+                signature=_org_signature(display_name),
                 country=country,
                 identifier=identifier,
             )
@@ -573,7 +578,7 @@ def _match_affiliation_set(
 
         institution_names = _extract_institution_names(raw_affiliation)
         if not institution_names:
-            institution_names = [raw_affiliation]
+            institution_names = _fallback_institution_phrases(raw_affiliation)
 
         for institution_name in institution_names:
             inst_key = _institution_key(institution_name)
@@ -634,6 +639,24 @@ def _match_affiliation_set(
         "label": f"name similarity ({best_possible[1].name})",
         "institution": best_possible[1].name,
     }
+
+
+def _fallback_institution_phrases(affiliation: str) -> list[str]:
+    phrases = [part.strip() for part in re.split(r"[;|]", affiliation) if part.strip()]
+    if not phrases:
+        phrases = [affiliation]
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for phrase in phrases:
+        comma_chunks = [chunk.strip() for chunk in phrase.split(",") if chunk.strip()]
+        for value in ([phrase] + comma_chunks):
+            lowered = value.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            out.append(value)
+    return out or [affiliation]
 
 
 def _identifier_in_affiliation(affiliation: str, identifier: str) -> bool:

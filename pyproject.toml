@@ -29,8 +29,10 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.setuptools]
-packages = ["app"]
+packages = ["app", "affiliation_normalizer"]
+
+[tool.setuptools.package-data]
+affiliation_normalizer = ["data/*.json"]
 
 [tool.mypy]
 python_version = "3.12"
-
