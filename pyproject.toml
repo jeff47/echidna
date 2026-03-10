@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Precision-first publication counting webapp with PubMed/PMC support"
 requires-python = ">=3.11"
 dependencies = [
+  "affiliation_normalizer @ git+https://github.com/jeff47/affiliation_normalizer.git@main",
   "fastapi>=0.115,<1",
   "httpx>=0.27,<1",
   "jinja2>=3.1,<4",
@@ -29,10 +30,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.setuptools]
-packages = ["app", "affiliation_normalizer"]
-
-[tool.setuptools.package-data]
-affiliation_normalizer = ["data/*.json"]
+packages = ["app"]
 
 [tool.mypy]
 python_version = "3.12"

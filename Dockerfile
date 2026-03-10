@@ -6,10 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN useradd -m -u 10001 echidna
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md /app/
 COPY app /app/app
-COPY affiliation_normalizer /app/affiliation_normalizer
 COPY templates /app/templates
 COPY echidna.jpg /app/echidna.jpg
 COPY favicon.ico /app/favicon.ico

@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
-from affiliation_normalizer import match_affiliation, match_record
+from affiliation_normalizer import match_affiliation, match_record  # type: ignore[import-untyped]
 
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, TargetName
 
