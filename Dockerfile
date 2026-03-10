@@ -9,6 +9,7 @@ RUN useradd -m -u 10001 echidna
 
 COPY pyproject.toml README.md /app/
 COPY app /app/app
+COPY affiliation_normalizer /app/affiliation_normalizer
 COPY templates /app/templates
 COPY echidna.jpg /app/echidna.jpg
 COPY favicon.ico /app/favicon.ico

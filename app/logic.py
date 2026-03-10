@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
-from affiliation_normalizer import match_affiliation
+from affiliation_normalizer import match_affiliation, match_record
 
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, TargetName
 
@@ -36,6 +36,8 @@ TRAILING_PUNCT = re.compile(r"[.;,\s]+$")
 AMPERSAND = re.compile(r"\s*&\s*")
 APOSTROPHE_VARIANTS = re.compile(r"[’`´]")
 AFFILIATION_PIECE_SPLIT = re.compile(r"[;|]+")
+AFFILIATION_AND_SPLIT = re.compile(r"\band\b", flags=re.IGNORECASE)
+AFFILIATION_AND_DELIMITER_SPLIT = re.compile(r"\band\b(?!\s+[A-Za-z]+'s\b)", flags=re.IGNORECASE)
 INSTITUTION_HINTS = (
     "university",
     "hospital",
@@ -61,6 +63,66 @@ UNIT_WORDS = (
     "section",
     "unit",
 )
+AFFILIATION_ANCHOR_WORDS = {
+    "clinic",
+    "college",
+    "foundation",
+    "hospital",
+    "institute",
+    "institutes",
+    "school",
+    "system",
+    "university",
+}
+ORG_SUFFIX_WORDS = {"inc", "incorporated", "ltd", "llc", "corp", "corporation", "gmbh", "sa", "ag", "bv", "plc"}
+UNIT_ONLY_WORDS = {
+    "center",
+    "centre",
+    "department",
+    "departments",
+    "division",
+    "faculty",
+    "lab",
+    "laboratory",
+    "program",
+    "section",
+    "unit",
+}
+US_STATE_CODES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "dc", "de", "fl", "ga", "hi", "ia", "id", "il", "in", "ks",
+    "ky", "la", "ma", "md", "me", "mi", "mn", "mo", "ms", "mt", "nc", "nd", "ne", "nh", "nj", "nm", "nv",
+    "ny", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "va", "vt", "wa", "wi", "wv", "wy",
+}
+GEO_TOKENS = {
+    "country",
+    "state",
+    "city",
+    "county",
+    "province",
+    "usa",
+    "us",
+    "united",
+    "states",
+    "massachusetts",
+    "boston",
+}
+POSTAL_CODE_TOKEN = re.compile(r"^\d{5}(?:-\d{4})?$")
+AFFILIATION_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+AFFILIATION_ROR_URL_RE = re.compile(r"https?://(?:www\.)?ror\.org/[0-9a-z]{9}", flags=re.IGNORECASE)
+AFFILIATION_ROR_HOST_RE = re.compile(r"\bror\.org/[0-9a-z]{9}\b", flags=re.IGNORECASE)
+AFFILIATION_ROR_SPACED_URL_RE = re.compile(
+    r"https?://(?:www\.)?ror\.org/\s*0(?:\s*[0-9a-z]){8}",
+    flags=re.IGNORECASE,
+)
+AFFILIATION_ROR_SPACED_HOST_RE = re.compile(
+    r"\bror\.org/\s*0(?:\s*[0-9a-z]){8}",
+    flags=re.IGNORECASE,
+)
+AFFILIATION_ROR_PREFIX_RE = re.compile(
+    r"\bror(?:\s*id)?\s*[:#-]?\s*(0(?:\s*[0-9a-z]){8})\b",
+    flags=re.IGNORECASE,
+)
+AFFILIATION_GRID_RE = re.compile(r"\bgrid\s*\.\s*[a-z0-9]+\.[a-z0-9]+\b", flags=re.IGNORECASE)
 GENERIC_INSTITUTION_TOKENS = {
     "and",
     "at",
@@ -91,6 +153,21 @@ GENERIC_INSTITUTION_TOKENS = {
     "unit",
 }
 SHORT_DISTINCTIVE_TOKENS = {"nih", "nyu", "mit", "ucla", "ucsf"}
+CONJUNCTION_ONLY_FRAGMENTS = {"and", "or"}
+INSTITUTION_MARKER_WORDS = (
+    "center",
+    "centre",
+    "clinic",
+    "college",
+    "foundation",
+    "hospital",
+    "institute",
+    "institutes",
+    "laboratory",
+    "school",
+    "system",
+    "university",
+)
 UC_CAMPUS_ALIASES = {
     "berkeley": "Berkeley",
     "davis": "Davis",
@@ -329,16 +406,45 @@ def match_author(
 
 
 def affiliation_fingerprint(affiliation: str) -> str:
-    raw_affiliation = (affiliation or "").strip()
-    if not raw_affiliation:
+    return affiliation_blocks_fingerprint([], fallback_affiliation=affiliation)
+
+
+def affiliation_blocks_fingerprint(affiliation_blocks: list[str], *, fallback_affiliation: str = "") -> str:
+    blocks = _author_affiliation_blocks(affiliation_blocks=affiliation_blocks, fallback_affiliation=fallback_affiliation)
+    if not blocks:
         return "no-affiliation"
 
-    institutions = _extract_institution_names(affiliation)
-    keys = sorted({_institution_key(name) for name in institutions if _institution_key(name)})
-    if not keys:
-        fallback = _institution_key(raw_affiliation) or normalize_token(raw_affiliation)
-        return fallback[:120] if fallback else "no-affiliation"
-    return "|".join(keys)[:120]
+    keys: set[str] = set()
+    for block in blocks:
+        institutions = _extract_institution_names(block)
+        keys.update(_institution_key(name) for name in institutions if _institution_key(name))
+    sorted_keys = sorted(keys)
+    if sorted_keys:
+        return "|".join(sorted_keys)[:120]
+
+    raw_affiliation = "; ".join(blocks)
+    if not raw_affiliation:
+        raw_affiliation = fallback_affiliation.strip()
+    fallback = _institution_key(raw_affiliation) or normalize_token(raw_affiliation)
+    return fallback[:120] if fallback else "no-affiliation"
+
+
+def _author_affiliation_blocks(affiliation_blocks: list[str], *, fallback_affiliation: str = "") -> list[str]:
+    cleaned_blocks = [block.strip() for block in affiliation_blocks if block and block.strip()]
+    if cleaned_blocks:
+        return cleaned_blocks
+
+    raw_affiliation = fallback_affiliation.strip()
+    if not raw_affiliation:
+        return []
+    return [piece.strip() for piece in AFFILIATION_PIECE_SPLIT.split(raw_affiliation) if piece.strip()]
+
+
+def _author_record_affiliation_blocks(author: Author) -> list[str]:
+    return _author_affiliation_blocks(
+        affiliation_blocks=getattr(author, "affiliation_blocks", []),
+        fallback_affiliation=author.affiliation or "",
+    )
 
 
 def _extract_institution_names(affiliation: str) -> list[str]:
@@ -346,21 +452,59 @@ def _extract_institution_names(affiliation: str) -> list[str]:
     if not raw_affiliation:
         return []
 
-    names: list[str] = []
+    ror_ids, grid_ids, emails = _extract_affiliation_record_signals(raw_affiliation)
+    preferred_ror = ror_ids[0] if len(ror_ids) == 1 else ""
+    preferred_grid = grid_ids[0] if len(grid_ids) == 1 else ""
+    preferred_email = ";".join(emails) if emails else ""
+
+    id_names: list[str] = []
+    email_names: list[str] = []
+    text_names: list[str] = []
     seen_keys: set[str] = set()
-    for candidate in _affiliation_match_candidates(raw_affiliation):
-        result = match_affiliation(candidate)
-        if result.status != "matched" or not result.canonical_name:
-            continue
-        label = _normalize_institution_label(result.canonical_name)
+
+    def add_match(target: list[str], result_status: str, canonical_name: str | None) -> None:
+        if result_status != "matched" or not canonical_name:
+            return
+        label = _normalize_institution_label(canonical_name)
         key = _institution_key(label)
         if not key or key in seen_keys:
-            continue
+            return
         seen_keys.add(key)
-        names.append(label)
+        target.append(label)
 
-    if names:
-        return names
+    # Prefer record-level identifiers and email-domain signals before free text.
+    for ror_id in ror_ids:
+        result = match_record(ror_id=ror_id, affiliation_text=raw_affiliation)
+        add_match(id_names, result.status, result.canonical_name)
+    for grid_id in grid_ids:
+        for grid_candidate in _grid_signal_candidates(grid_id):
+            result = match_record(grid_id=grid_candidate, affiliation_text=raw_affiliation)
+            add_match(id_names, result.status, result.canonical_name)
+            if result.status == "matched":
+                break
+    if id_names:
+        return id_names
+
+    for email in emails:
+        result = match_record(email=email, affiliation_text=raw_affiliation)
+        add_match(email_names, result.status, result.canonical_name)
+    if email_names:
+        return email_names
+
+    for candidate in _affiliation_match_candidates(raw_affiliation):
+        if preferred_ror or preferred_grid or preferred_email:
+            result = match_record(
+                affiliation_text=candidate,
+                ror_id=preferred_ror,
+                grid_id=preferred_grid,
+                email=preferred_email,
+            )
+        else:
+            result = match_affiliation(candidate)
+        add_match(text_names, result.status, result.canonical_name)
+
+    if text_names:
+        return text_names
 
     # Support UC system strings where campus is present elsewhere in the AD line.
     uc_campus = _uc_campus_from_text(raw_affiliation)
@@ -376,9 +520,11 @@ def _affiliation_match_candidates(affiliation: str) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
 
-    def add(value: str) -> None:
+    def add(value: str, *, force: bool = False) -> None:
         normalized = _normalize_institution_label(value)
         if not normalized:
+            return
+        if not force and not _is_match_worthy_affiliation_candidate(normalized):
             return
         key = normalized.lower()
         if key in seen:
@@ -386,13 +532,164 @@ def _affiliation_match_candidates(affiliation: str) -> list[str]:
         seen.add(key)
         candidates.append(normalized)
 
-    add(affiliation)
+    add(affiliation, force=True)
+    # Split only on explicit affiliation delimiters (';' and '|').
+    # Do not split on commas: commas are usually intra-affiliation structure
+    # (department/institution/address), not reliable affiliation boundaries.
     pieces = [piece.strip() for piece in AFFILIATION_PIECE_SPLIT.split(affiliation) if piece.strip()]
     for piece in pieces:
         add(piece)
-        for clause in piece.split(","):
-            add(clause)
+        for conjunct_segment in _conjunction_split_candidates(piece):
+            add(conjunct_segment)
     return candidates
+
+
+def _extract_affiliation_record_signals(value: str) -> tuple[list[str], list[str], list[str]]:
+    ror_ids: list[str] = []
+    grid_ids: list[str] = []
+    emails: list[str] = []
+    seen_ror: set[str] = set()
+    seen_grid: set[str] = set()
+    seen_email: set[str] = set()
+
+    def add_ror(raw: str) -> None:
+        cleaned = _normalize_ror_signal(raw)
+        if not cleaned or cleaned in seen_ror:
+            return
+        seen_ror.add(cleaned)
+        ror_ids.append(cleaned)
+
+    def add_grid(raw: str) -> None:
+        cleaned = _normalize_grid_signal(raw)
+        if not cleaned or cleaned in seen_grid:
+            return
+        seen_grid.add(cleaned)
+        grid_ids.append(cleaned)
+
+    def add_email(raw: str) -> None:
+        cleaned = raw.strip()
+        if not cleaned or cleaned in seen_email:
+            return
+        seen_email.add(cleaned)
+        emails.append(cleaned)
+
+    for match in AFFILIATION_ROR_URL_RE.findall(value):
+        add_ror(match)
+    for match in AFFILIATION_ROR_HOST_RE.findall(value):
+        add_ror(match)
+    for match in AFFILIATION_ROR_SPACED_URL_RE.findall(value):
+        add_ror(match)
+    for match in AFFILIATION_ROR_SPACED_HOST_RE.findall(value):
+        add_ror(match)
+    for match in AFFILIATION_ROR_PREFIX_RE.findall(value):
+        add_ror(match)
+    for match in AFFILIATION_GRID_RE.findall(value):
+        add_grid(match)
+    for match in AFFILIATION_EMAIL_RE.findall(value):
+        add_email(match)
+
+    return ror_ids, grid_ids, emails
+
+
+def _normalize_ror_signal(value: str) -> str:
+    collapsed = re.sub(r"\s+", "", value.strip().lower())
+    if not collapsed:
+        return ""
+    if collapsed.startswith("ror.org/"):
+        collapsed = f"https://{collapsed}"
+    if re.fullmatch(r"0[0-9a-z]{8}", collapsed):
+        collapsed = f"https://ror.org/{collapsed}"
+    if not re.fullmatch(r"https?://(?:www\.)?ror\.org/0[0-9a-z]{8}", collapsed):
+        return ""
+    collapsed = re.sub(r"^https?://(?:www\.)?", "https://", collapsed)
+    return collapsed
+
+
+def _normalize_grid_signal(value: str) -> str:
+    collapsed = re.sub(r"\s+", "", value.strip().lower())
+    if not collapsed.startswith("grid."):
+        return ""
+    match = re.match(r"^grid\.[a-z0-9]+\.[a-z0-9]+", collapsed)
+    if match is None:
+        return ""
+    return match.group(0)
+
+
+def _grid_signal_candidates(value: str) -> list[str]:
+    normalized = _normalize_grid_signal(value)
+    if not normalized:
+        return []
+    candidates: list[str] = [normalized]
+    match = re.fullmatch(r"(grid\.[a-z0-9]+\.)([a-z0-9]+)", normalized)
+    if match is None:
+        return candidates
+    prefix = match.group(1)
+    suffix = match.group(2)
+    if len(suffix) <= 4:
+        return candidates
+    for width in (2, 1, 3, 4):
+        if len(suffix) < width:
+            continue
+        candidate = f"{prefix}{suffix[:width]}"
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _contains_institution_marker(value: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", normalize_text(value)))
+    return bool(tokens & set(INSTITUTION_MARKER_WORDS))
+
+
+def _conjunction_split_candidates(value: str) -> list[str]:
+    # Some AD lines encode multiple institutions in one clause:
+    # "... Hospital and Harvard Medical School". Split these so each institution
+    # can be matched independently, but only when both sides look institutional.
+    normalized_value = _normalize_institution_label(value)
+    parts = [_normalize_institution_label(part) for part in AFFILIATION_AND_DELIMITER_SPLIT.split(normalized_value) if part.strip()]
+    if len(parts) < 2:
+        return []
+    marked_parts = [part for part in parts if _contains_institution_marker(part)]
+    if len(marked_parts) < 2:
+        return []
+    return marked_parts
+
+
+def _is_match_worthy_affiliation_candidate(value: str) -> bool:
+    normalized = normalize_text(value)
+    if not normalized:
+        return False
+    if normalized in CONJUNCTION_ONLY_FRAGMENTS:
+        return False
+    if _looks_like_geo_only_phrase(normalized):
+        return False
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if not tokens:
+        return False
+    if any(token in AFFILIATION_ANCHOR_WORDS for token in tokens):
+        return True
+    if any(token in ORG_SUFFIX_WORDS for token in tokens):
+        return True
+    if any(token in UNIT_ONLY_WORDS for token in tokens):
+        return False
+    if len(tokens) == 1:
+        return tokens[0] in SHORT_DISTINCTIVE_TOKENS
+    return True
+
+
+def _looks_like_geo_only_phrase(normalized: str) -> bool:
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if not tokens:
+        return False
+    geo_like = 0
+    for token in tokens:
+        if token in US_STATE_CODES or token in GEO_TOKENS or POSTAL_CODE_TOKEN.fullmatch(token):
+            geo_like += 1
+    if geo_like == len(tokens):
+        return True
+    if len(tokens) <= 4 and geo_like >= len(tokens) - 1:
+        return True
+    return False
 
 
 def _uc_campus_from_text(value: str) -> str:
@@ -510,7 +807,10 @@ def build_clusters(
             if method == "orcid" and author_orcid:
                 cluster_id = f"orcid:{author_orcid}"
             else:
-                aff_key = affiliation_fingerprint(author.affiliation)
+                aff_key = affiliation_blocks_fingerprint(
+                    _author_record_affiliation_blocks(author),
+                    fallback_affiliation=author.affiliation or "",
+                )
                 cluster_id = f"{normalize_token(author.last_name)}|{extract_initials(author.fore_name)}|{aff_key}"
                 if aff_key == "no-affiliation":
                     # Keep no-affiliation candidates independent so users can include/exclude per citation.
@@ -534,6 +834,10 @@ def build_clusters(
         for match in citation_matches:
             matches.append(match)
             cluster_mentions[match.cluster_id].append(match)
+
+    cluster_mentions, merged_cluster_id_map = _merge_subset_affiliation_clusters(cluster_mentions)
+    for match in matches:
+        match.cluster_id = merged_cluster_id_map.get(match.cluster_id, match.cluster_id)
 
     clusters: list[Cluster] = []
     for cluster_id, cluster_matches in cluster_mentions.items():
@@ -562,28 +866,93 @@ def build_clusters(
     return clusters, matches
 
 
+def _merge_subset_affiliation_clusters(
+    cluster_mentions: dict[str, list[AuthorMatch]],
+) -> tuple[dict[str, list[AuthorMatch]], dict[str, str]]:
+    mention_counts = {cluster_id: len(matches) for cluster_id, matches in cluster_mentions.items()}
+
+    by_name_key: dict[str, list[tuple[str, set[str]]]] = defaultdict(list)
+    for cluster_id in cluster_mentions:
+        parsed = _parse_name_affiliation_cluster_id(cluster_id)
+        if parsed is None:
+            continue
+        name_key, affiliation_keys = parsed
+        if not affiliation_keys:
+            continue
+        by_name_key[name_key].append((cluster_id, affiliation_keys))
+
+    merge_to: dict[str, str] = {}
+    for candidates in by_name_key.values():
+        for cluster_id, affiliation_keys in candidates:
+            supersets = [
+                (other_id, other_keys)
+                for other_id, other_keys in candidates
+                if cluster_id != other_id and affiliation_keys < other_keys and mention_counts.get(other_id, 0) >= mention_counts.get(cluster_id, 0)
+            ]
+            if not supersets:
+                continue
+            supersets.sort(
+                key=lambda item: (mention_counts.get(item[0], 0), len(item[1]), item[0]),
+                reverse=True,
+            )
+            merge_to[cluster_id] = supersets[0][0]
+
+    if not merge_to:
+        identity_map = {cluster_id: cluster_id for cluster_id in cluster_mentions}
+        return cluster_mentions, identity_map
+
+    def canonical_cluster_id(cluster_id: str) -> str:
+        current = cluster_id
+        seen: set[str] = set()
+        while current in merge_to and current not in seen:
+            seen.add(current)
+            current = merge_to[current]
+        return current
+
+    merged: dict[str, list[AuthorMatch]] = defaultdict(list)
+    canonical_map: dict[str, str] = {}
+    for cluster_id, items in cluster_mentions.items():
+        canonical = canonical_cluster_id(cluster_id)
+        canonical_map[cluster_id] = canonical
+        merged[canonical].extend(items)
+    return merged, canonical_map
+
+
+def _parse_name_affiliation_cluster_id(cluster_id: str) -> tuple[str, set[str]] | None:
+    if cluster_id.startswith("orcid:"):
+        return None
+    parts = cluster_id.split("|")
+    if len(parts) < 3:
+        return None
+    if parts[-1].startswith("pmid:"):
+        # Keep no-affiliation per-PMID clusters independent by design.
+        return None
+    name_key = "|".join(parts[:2])
+    affiliation_keys = {part for part in parts[2:] if part}
+    return name_key, affiliation_keys
+
+
 def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
     seen: set[str] = set()
     labels: dict[str, str] = {}
     for match in matches:
-        raw_affiliation = (match.author.affiliation or "").strip()
-        if not raw_affiliation:
-            continue
-        names = _extract_institution_names(raw_affiliation)
-        if not names:
-            names = [
-                _normalize_institution_label(part)
-                for part in AFFILIATION_PIECE_SPLIT.split(raw_affiliation)
-                if _normalize_institution_label(part)
-            ]
-        for name in names:
-            key = _institution_key(name)
-            if not key:
-                key = normalize_token(name)
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            labels[key] = _normalize_institution_label(name)
+        for raw_affiliation in _author_record_affiliation_blocks(match.author):
+            names = _extract_institution_names(raw_affiliation)
+            if not names:
+                names = [
+                    _normalize_institution_label(part)
+                    for part in AFFILIATION_PIECE_SPLIT.split(raw_affiliation)
+                    if _normalize_institution_label(part)
+                    and normalize_text(_normalize_institution_label(part)) not in CONJUNCTION_ONLY_FRAGMENTS
+                ]
+            for name in names:
+                key = _institution_key(name)
+                if not key:
+                    key = normalize_token(name)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                labels[key] = _normalize_institution_label(name)
     return sorted(labels.values(), key=str.lower)
 
 

@@ -689,6 +689,8 @@ def _build_citation_selection_rows(
         cluster_labels.add(cluster_label_by_id.get(match.cluster_id, match.cluster_id))
         affiliations = cast(set[str], row["affiliations"])
         affiliation = (match.author.affiliation or "").strip()
+        if not affiliation:
+            affiliation = "; ".join(_author_affiliation_blocks(match.author))
         if affiliation:
             affiliations.add(affiliation)
         positions = cast(set[int], row["positions"])
@@ -869,10 +871,20 @@ def _sanitize_citation_affiliations(citations: list[Citation]) -> int:
     changed = 0
     for citation in citations:
         for author in citation.authors:
-            original = author.affiliation or ""
-            cleaned = _normalize_affiliation_text(original)
-            if cleaned != original:
-                author.affiliation = cleaned
+            original_affiliation = author.affiliation or ""
+            original_blocks = _author_affiliation_blocks(author)
+            cleaned_blocks: list[str] = []
+            seen_blocks: set[str] = set()
+            for block in original_blocks:
+                cleaned = _normalize_affiliation_text(block)
+                if not cleaned or cleaned in seen_blocks:
+                    continue
+                seen_blocks.add(cleaned)
+                cleaned_blocks.append(cleaned)
+            cleaned_affiliation = "; ".join(cleaned_blocks)
+            if cleaned_blocks != original_blocks or cleaned_affiliation != original_affiliation:
+                author.affiliation_blocks = cleaned_blocks
+                author.affiliation = cleaned_affiliation
                 changed += 1
     return changed
 
@@ -1105,13 +1117,27 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
     )
 
 
+def _split_affiliation_blocks(raw_affiliation: str) -> list[str]:
+    return [piece.strip() for piece in re.split(r"[;|]+", raw_affiliation) if piece.strip()]
+
+
+def _author_affiliation_blocks(author: Any) -> list[str]:
+    raw_blocks = getattr(author, "affiliation_blocks", [])
+    blocks = [str(value).strip() for value in raw_blocks if str(value).strip()] if isinstance(raw_blocks, list) else []
+    if blocks:
+        return blocks
+    return _split_affiliation_blocks(str(getattr(author, "affiliation", "")))
+
+
 def _serialize_author(author: Any) -> dict[str, Any]:
+    affiliation_blocks = _author_affiliation_blocks(author)
     return {
         "position": int(author.position),
         "last_name": str(author.last_name),
         "fore_name": str(author.fore_name),
         "initials": str(author.initials),
         "affiliation": str(author.affiliation),
+        "affiliation_blocks": affiliation_blocks,
         "orcid": str(getattr(author, "orcid", "")),
     }
 
@@ -1119,12 +1145,21 @@ def _serialize_author(author: Any) -> dict[str, Any]:
 def _deserialize_author(payload: dict[str, Any]) -> Any:
     from app.models import Author
 
+    raw_blocks = payload.get("affiliation_blocks", [])
+    if isinstance(raw_blocks, list):
+        affiliation_blocks = [str(value).strip() for value in raw_blocks if str(value).strip()]
+    else:
+        affiliation_blocks = []
+    if not affiliation_blocks:
+        affiliation_blocks = _split_affiliation_blocks(str(payload.get("affiliation", "")))
+
     return Author(
         position=int(payload["position"]),
         last_name=str(payload.get("last_name", "")),
         fore_name=str(payload.get("fore_name", "")),
         initials=str(payload.get("initials", "")),
-        affiliation=str(payload.get("affiliation", "")),
+        affiliation=str(payload.get("affiliation", "")).strip() or "; ".join(affiliation_blocks),
+        affiliation_blocks=affiliation_blocks,
         orcid=str(payload.get("orcid", "")),
     )
 

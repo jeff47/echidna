@@ -50,3 +50,17 @@ node_modules/
 *.password
 *.token
 .runtime/echidna.env
+donlinlaur-affiliation-normalizer-ad-strings.tsv
+ivashkivlb-affiliation-normalizer-ad-strings.tsv
+kevinoconn-affiliation-normalizer-ad-strings.tsv
+kevinoconn-affiliation-normalizer-ad-unique.txt
+pmid-donlinlaur-set.txt
+pmid-IvashkivLB-set.txt
+pmid-kevinoconn-set.txt
+.gitignore
+pmid-NIAIDgr-set.txt
+pmid-sagept-set.txt
+pubmed-NIAIDgr-set.txt
+sagept-ad-ror-email-audit.tsv
+sagept-affiliation-normalizer-ad-strings.tsv
+sagept-affiliation-normalizer-inputs.tsv

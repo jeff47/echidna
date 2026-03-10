@@ -65,7 +65,9 @@ def test_extract_pmc_enrichment_includes_roles_and_affiliations() -> None:
     assert co_first == {1}
     assert co_senior == {2}
     assert authors[0].affiliation.startswith("Department of Immunology")
+    assert authors[0].affiliation_blocks == ["Department of Immunology, Institute A"]
     assert authors[1].affiliation.startswith("Department of Pathology")
+    assert authors[1].affiliation_blocks == ["Department of Pathology, Institute B"]
     assert pmc_count == 2
     assert authors[0].last_name == "Rice"
     assert authors[0].fore_name == "Jeffrey"
@@ -271,6 +273,7 @@ def test_fill_missing_affiliations_from_pmc_values() -> None:
 
     assert filled == 1
     assert citation.authors[0].affiliation == "Institute A"
+    assert citation.authors[0].affiliation_blocks == ["Institute A"]
     assert citation.authors[1].affiliation == "Already Present"
 
 
@@ -322,6 +325,7 @@ def test_fill_missing_affiliations_from_pubmed_after_pmc_replace() -> None:
 
     assert filled == 1
     assert citation.authors[0].affiliation == "Department of Neurology, Example University"
+    assert citation.authors[0].affiliation_blocks == ["Department of Neurology, Example University"]
     assert citation.authors[1].affiliation == ""
 
 

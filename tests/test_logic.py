@@ -2,6 +2,8 @@ import pytest
 from typing import Literal
 
 from app.logic import (
+    _affiliation_match_candidates,
+    _extract_affiliation_record_signals,
     affiliation_fingerprint,
     analyze_citations,
     build_clusters,
@@ -183,6 +185,64 @@ def test_build_clusters_groups_by_affiliation_fingerprint() -> None:
     assert len(clusters) == 2
 
 
+def test_build_clusters_unifies_distinct_and_combined_affiliation_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_extract_institution_names(affiliation: str) -> list[str]:
+        names: list[str] = []
+        if "brigham" in affiliation.lower():
+            names.append("Brigham and Women's Hospital")
+        if "harvard" in affiliation.lower():
+            names.append("Harvard Medical School")
+        return names
+
+    monkeypatch.setattr("app.logic._extract_institution_names", fake_extract_institution_names)
+
+    target = parse_target_name("Peter T Sage")
+    citations = [
+        _citation(
+            "301",
+            2024,
+            [
+                Author(
+                    position=1,
+                    last_name="Sage",
+                    fore_name="Peter T",
+                    initials="PT",
+                    affiliation=(
+                        "Transplantation Research Center, Brigham and Women's Hospital; "
+                        "Harvard Medical School"
+                    ),
+                    affiliation_blocks=[
+                        "Transplantation Research Center, Brigham and Women's Hospital",
+                        "Harvard Medical School",
+                    ],
+                )
+            ],
+        ),
+        _citation(
+            "302",
+            2025,
+            [
+                Author(
+                    position=1,
+                    last_name="Sage",
+                    fore_name="Peter T",
+                    initials="PT",
+                    affiliation=(
+                        "Transplantation Research Center, Brigham and Women's Hospital; "
+                        "Harvard Medical School"
+                    ),
+                )
+            ],
+        ),
+    ]
+
+    clusters, matches = build_clusters(citations, target)
+
+    assert len(matches) == 2
+    assert len(clusters) == 1
+    assert clusters[0].affiliations == ["Brigham and Women's Hospital", "Harvard Medical School"]
+
+
 def test_build_clusters_does_not_group_no_affiliation_mentions() -> None:
     target = parse_target_name("Jane Q Doe")
     citations = [
@@ -234,6 +294,44 @@ def test_build_clusters_groups_same_institute_across_different_departments() -> 
     assert "Hospital for Special Surgery" in clusters[0].affiliations
 
 
+def test_build_clusters_merges_subset_affiliation_keys_for_same_name() -> None:
+    target = parse_target_name("Peter Sage")
+    citations = [
+        _citation(
+            "901",
+            2024,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter T.",
+                    "PT",
+                    "Transplantation Research Center, Renal Division, Brigham and Women's Hospital, Harvard Medical School, Boston, MA, USA",
+                )
+            ],
+        ),
+        _citation(
+            "902",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter T.",
+                    "PT",
+                    "Department of Medicine, Transplantation Research Center, Division of Renal Medicine, Brigham and Women's Hospital, Boston, MA USA",
+                )
+            ],
+        ),
+    ]
+    clusters, matches = build_clusters(citations, target)
+
+    assert len(matches) == 2
+    assert len(clusters) == 1
+    assert clusters[0].mention_count == 2
+    assert {match.cluster_id for match in matches} == {clusters[0].cluster_id}
+
+
 def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
     target = parse_target_name("Peter Sage")
     citations = [
@@ -268,8 +366,8 @@ def test_cluster_affiliation_labels_dedupe_noisy_variants() -> None:
 
     assert len(clusters) == 1
     assert "Brigham and Women's Hospital" in clusters[0].affiliations
-    assert "Harvard University" in clusters[0].affiliations
-    assert len(clusters[0].affiliations) <= 3
+    assert "Harvard University" not in clusters[0].affiliations
+    assert len(clusters[0].affiliations) <= 2
     assert not any("&" in label for label in clusters[0].affiliations)
 
 
@@ -281,6 +379,74 @@ def test_affiliation_fingerprint_collapses_ampersand_and_apostrophe_variants() -
         "Transplantation Research Center, Renal Division, Brigham and Women`s Hospital, Harvard Medical School, Boston, MA USA"
     )
     assert left == right
+
+
+def test_affiliation_fingerprint_splits_multi_institution_and_clauses() -> None:
+    value = affiliation_fingerprint(
+        "Transplantation Research Center, Division of Renal Medicine, Brigham and Women’s Hospital and Harvard Medical School, Boston, MA, USA"
+    )
+    assert value == "brighamandwomenshospital|harvarduniversity"
+
+
+def test_affiliation_match_candidates_filters_unit_and_geo_fragments() -> None:
+    candidates = _affiliation_match_candidates(
+        "Transplantation Research Center, Division of Renal Medicine, Brigham and Women's Hospital and Harvard Medical School, Boston, MA, USA"
+    )
+
+    assert "Renal Division" not in candidates
+    assert "Boston" not in candidates
+    assert "MA" not in candidates
+    assert "USA" not in candidates
+    assert "Transplantation Research Center" not in candidates
+    assert "Women's Hospital" not in candidates
+    assert "Brigham and Women's Hospital" not in candidates
+    assert "Harvard Medical School" not in candidates
+    assert "Harvard Medical School, Boston, MA, USA" in candidates
+
+
+def test_affiliation_match_candidates_does_not_split_on_commas() -> None:
+    candidates = _affiliation_match_candidates(
+        "Department of Immunology, Yale School of Medicine, New Haven, CT, USA"
+    )
+    assert candidates == ["Department of Immunology, Yale School of Medicine, New Haven, CT, USA"]
+
+
+def test_affiliation_fingerprint_handles_unicode_dash_separating_institutions() -> None:
+    value = affiliation_fingerprint(
+        "Department of Immunology, Blavatnik Institute, Harvard Medical School, Boston, MA;; Evergrande Center for Immunologic Diseases, Harvard Medical School–Brigham and Women's Hospital, Boston, MA;"
+    )
+    assert value == "brighamandwomenshospital|harvarduniversity"
+
+
+def test_affiliation_fingerprint_prefers_ror_identifier_over_text() -> None:
+    value = affiliation_fingerprint(
+        "https://ror.org/04b6nzv94 Department of Immunology, Harvard Medical School, Boston, MA, USA"
+    )
+    assert value == "brighamandwomenshospital"
+
+
+def test_affiliation_fingerprint_uses_grid_identifier_for_matching() -> None:
+    value = affiliation_fingerprint(
+        "grid.62560.37 Department of Medicine, Unknown Institute, Boston, MA, USA"
+    )
+    assert value == "brighamandwomenshospital"
+
+
+def test_affiliation_fingerprint_recovers_noisy_grid_suffix_from_concatenated_identifiers() -> None:
+    value = affiliation_fingerprint(
+        "https://ror.org/04b6nzv94 grid.62560.370000 0004 0378 8294 Department of Medicine, "
+        "Transplantation Research Center, Division of Renal Medicine, Brigham and Women's Hospital, Boston, MA USA"
+    )
+    assert value == "brighamandwomenshospital"
+
+
+def test_extract_affiliation_record_signals_normalizes_spaced_ror_url() -> None:
+    ror_ids, grid_ids, emails = _extract_affiliation_record_signals(
+        "https://ror.org/03 vek6s52grid.38142. Transplantation Research Center, Brigham and Women's Hospital"
+    )
+    assert ror_ids == ["https://ror.org/03vek6s52"]
+    assert grid_ids == []
+    assert emails == []
 
 
 def test_cluster_affiliation_labels_keep_uc_davis_from_split_university_clause() -> None:
@@ -304,6 +470,29 @@ def test_cluster_affiliation_labels_keep_uc_davis_from_split_university_clause()
 
     assert len(clusters) == 1
     assert "University of California, Davis" in clusters[0].affiliations
+
+
+def test_cluster_affiliation_labels_ignores_dangling_and_fragment() -> None:
+    target = parse_target_name("Peter Sage")
+    citations = [
+        _citation(
+            "888",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter",
+                    "P",
+                    "Transplantation Research Center, Division of Renal Medicine, Department of Medicine; and",
+                )
+            ],
+        )
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    assert len(clusters) == 1
+    assert "and" not in [value.lower() for value in clusters[0].affiliations]
 
 
 def test_cluster_affiliation_labels_infer_uc_davis_from_city_plus_system() -> None:

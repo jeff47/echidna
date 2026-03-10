@@ -11,6 +11,7 @@ class Author:
     fore_name: str
     initials: str
     affiliation: str
+    affiliation_blocks: list[str] = field(default_factory=list)
     orcid: str = ""
 
 

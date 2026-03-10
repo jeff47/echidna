@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Mapping
 from typing import Any, Iterable
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
@@ -145,7 +146,9 @@ class NcbiClient:
                         citation.notes.append(f"Filled {filled} affiliation(s) from PubMed fallback")
                 else:
                     pmc_affiliations = {
-                        author.position: author.affiliation for author in pmc_authors if author.affiliation.strip()
+                        author.position: _author_affiliation_blocks(author)
+                        for author in pmc_authors
+                        if _author_affiliation_blocks(author)
                     }
                     filled = self._fill_missing_affiliations(citation, pmc_affiliations)
                     if filled:
@@ -392,7 +395,7 @@ class NcbiClient:
             if not last_name:
                 # Fall back to collaborative/string names when person name markup is absent.
                 last_name = _find_text(contrib, ".//collab") or _find_text(contrib, ".//string-name")
-            affiliation = _extract_contrib_affiliation(
+            affiliation_blocks = _extract_contrib_affiliation_blocks(
                 contrib,
                 aff_by_id=aff_by_id,
                 aff_by_label=aff_by_label,
@@ -404,7 +407,8 @@ class NcbiClient:
                     last_name=last_name,
                     fore_name=fore_name,
                     initials=_initials_from_name(fore_name),
-                    affiliation=affiliation,
+                    affiliation="; ".join(affiliation_blocks),
+                    affiliation_blocks=affiliation_blocks,
                     orcid=_extract_pmc_contrib_orcid(contrib),
                 )
             )
@@ -433,15 +437,24 @@ class NcbiClient:
 
         return co_first_positions, co_senior_positions, authors, len(contribs)
 
-    def _fill_missing_affiliations(self, citation: Citation, pmc_affiliations: dict[int, str]) -> int:
+    def _fill_missing_affiliations(
+        self,
+        citation: Citation,
+        pmc_affiliations: Mapping[int, list[str] | str],
+    ) -> int:
         filled = 0
         for author in citation.authors:
-            if author.affiliation.strip():
+            if _author_has_affiliation(author):
                 continue
-            pmc_aff = pmc_affiliations.get(author.position, "").strip()
-            if not pmc_aff:
+            raw_pmc_aff = pmc_affiliations.get(author.position)
+            pmc_aff_blocks = (
+                _normalize_affiliation_blocks(raw_pmc_aff)
+                if isinstance(raw_pmc_aff, list)
+                else _normalize_affiliation_blocks([raw_pmc_aff or ""])
+            )
+            if not pmc_aff_blocks:
                 continue
-            author.affiliation = pmc_aff
+            _set_author_affiliations(author, pmc_aff_blocks)
             filled += 1
         return filled
 
@@ -456,18 +469,18 @@ class NcbiClient:
 
     def _fill_missing_affiliations_from_pubmed(self, citation: Citation, pubmed_authors: list[Author]) -> int:
         by_position: dict[int, Author] = {
-            author.position: author for author in pubmed_authors if author.affiliation.strip()
+            author.position: author for author in pubmed_authors if _author_has_affiliation(author)
         }
         filled = 0
         for author in citation.authors:
-            if author.affiliation.strip():
+            if _author_has_affiliation(author):
                 continue
             source = by_position.get(author.position)
             if source is None:
                 continue
             if not _authors_likely_same_person(author, source):
                 continue
-            author.affiliation = source.affiliation
+            _set_author_affiliations(author, _author_affiliation_blocks(source))
             filled += 1
         return filled
 
@@ -516,41 +529,47 @@ def _find_authors(article: ET.Element) -> list[Author]:
         last_name = _find_text(author, "LastName")
         fore_name = _find_text(author, "ForeName")
         initials = _find_text(author, "Initials")
-        affs = [
-            _normalize_affiliation_text("".join(a.itertext()))
-            for a in author.findall("AffiliationInfo/Affiliation")
-            if _normalize_affiliation_text("".join(a.itertext()))
-        ]
-        affiliation = "; ".join(affs)
+        affs = _normalize_affiliation_blocks(
+            [
+                "".join(a.itertext())
+                for a in author.findall("AffiliationInfo/Affiliation")
+            ]
+        )
         authors.append(
             Author(
                 position=idx,
                 last_name=last_name,
                 fore_name=fore_name,
                 initials=initials,
-                affiliation=affiliation,
+                affiliation="; ".join(affs),
+                affiliation_blocks=affs,
                 orcid=_extract_pubmed_author_orcid(author),
             )
         )
     # Legacy PubMed records may expose one shared affiliation either at article-level or
     # in one author's AffiliationInfo without explicit links for the remaining authors.
-    # If exactly one unique affiliation is present for the citation, apply it to missing authors.
+    # If exactly one unique affiliation block is present for the citation, apply it to
+    # missing authors.
     author_level_affiliations = {
-        author.affiliation.strip()
+        block
         for author in authors
-        if author.affiliation.strip()
+        for block in _author_affiliation_blocks(author)
     }
     article_affiliations = {
-        _normalize_affiliation_text("".join(node.itertext()))
-        for node in article.findall(".//Article/Affiliation")
-        if _normalize_affiliation_text("".join(node.itertext()))
+        block
+        for block in _normalize_affiliation_blocks(
+            [
+                "".join(node.itertext())
+                for node in article.findall(".//Article/Affiliation")
+            ]
+        )
     }
     shared_affiliations = author_level_affiliations | article_affiliations
     if len(shared_affiliations) == 1:
-        only_affiliation = next(iter(shared_affiliations))
+        only_affiliation = [next(iter(shared_affiliations))]
         for parsed_author in authors:
-            if not parsed_author.affiliation.strip():
-                parsed_author.affiliation = only_affiliation
+            if not _author_has_affiliation(parsed_author):
+                _set_author_affiliations(parsed_author, only_affiliation)
     return authors
 
 
@@ -748,6 +767,23 @@ def _extract_contrib_affiliation(
     aff_by_label: dict[str, str],
     note_by_id: dict[str, str],
 ) -> str:
+    return "; ".join(
+        _extract_contrib_affiliation_blocks(
+            contrib,
+            aff_by_id=aff_by_id,
+            aff_by_label=aff_by_label,
+            note_by_id=note_by_id,
+        )
+    )
+
+
+def _extract_contrib_affiliation_blocks(
+    contrib: ET.Element,
+    *,
+    aff_by_id: dict[str, str],
+    aff_by_label: dict[str, str],
+    note_by_id: dict[str, str],
+) -> list[str]:
     direct_collected: list[str] = []
     rid_collected: list[str] = []
 
@@ -784,7 +820,7 @@ def _extract_contrib_affiliation(
     # Precision-first: only fall back to fn/corresp note text when no direct
     # author->affiliation linkage is available.
     if direct_collected:
-        return "; ".join(_dedupe_preserve_order(direct_collected))
+        return _normalize_affiliation_blocks(direct_collected)
 
     note_collected: list[str] = []
     for xref in contrib.findall(".//xref[@ref-type='fn']") + contrib.findall(".//xref[@ref-type='corresp']"):
@@ -793,7 +829,7 @@ def _extract_contrib_affiliation(
             if _looks_like_affiliation_text(note_text):
                 note_collected.append(note_text)
 
-    return "; ".join(_dedupe_preserve_order(note_collected))
+    return _normalize_affiliation_blocks(note_collected)
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -805,6 +841,40 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(value)
         out.append(value)
     return out
+
+
+def _split_affiliation_blocks(value: str) -> list[str]:
+    return [piece.strip() for piece in re.split(r"[;|]+", value) if piece.strip()]
+
+
+def _normalize_affiliation_blocks(values: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for piece in _split_affiliation_blocks(value):
+            cleaned = _normalize_affiliation_text(piece)
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            out.append(cleaned)
+    return out
+
+
+def _author_affiliation_blocks(author: Author) -> list[str]:
+    explicit = _normalize_affiliation_blocks(getattr(author, "affiliation_blocks", []))
+    if explicit:
+        return explicit
+    return _normalize_affiliation_blocks([author.affiliation or ""])
+
+
+def _author_has_affiliation(author: Author) -> bool:
+    return bool(_author_affiliation_blocks(author))
+
+
+def _set_author_affiliations(author: Author, blocks: Iterable[str]) -> None:
+    normalized_blocks = _normalize_affiliation_blocks(blocks)
+    author.affiliation_blocks = normalized_blocks
+    author.affiliation = "; ".join(normalized_blocks)
 
 
 def _clean_text(value: str) -> str:
@@ -830,13 +900,37 @@ def _authors_likely_same_person(left: Author, right: Author) -> bool:
 def _normalize_affiliation_text(value: str) -> str:
     cleaned = _clean_text(value)
     cleaned = cleaned.translate(SUPERSCRIPT_TRANSLATION)
+    cleaned = _normalize_spaced_ror_urls(cleaned)
+    # Insert boundary between compact ROR ID and immediately concatenated text
+    # (e.g. ".../03zjqec80HSS" -> ".../03zjqec80 HSS").
+    cleaned = re.sub(
+        r"(https?://(?:www\.)?ror\.org/[0-9a-z]{9})(?=[A-Z])",
+        r"\1 ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    # Some publisher feeds concatenate registry IDs without delimiters
+    # (e.g. ".../03vek6s52grid.38142.3c..."). Add a boundary so both
+    # identifiers remain parseable downstream.
+    cleaned = re.sub(
+        r"(https?://(?:www\.)?ror\.org/[0-9a-z]{9})(?=grid\s*\.)",
+        r"\1 ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = _strip_affiliation_identifiers(cleaned)
     cleaned = _strip_leading_numeric_marker_clusters(cleaned)
     cleaned = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", cleaned)
     cleaned = _strip_segment_prefix_markers(cleaned)
+    cleaned = re.sub(
+        r"((?i:\bgrid\.[a-z0-9]+\.[a-z0-9]+)\s+)(?:[a-z]|X)(?=[A-Z])\s*",
+        r"\1",
+        cleaned,
+    )
     # Common legacy formatting artifacts: "1Department", "and2 Department".
     cleaned = re.sub(r"\band(?=\d)", "and ", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"(?<![A-Za-z0-9])(\d+)(?=[A-Za-z])", r"\1 ", cleaned)
+    # Avoid splitting digit+alpha tokens in URL paths (e.g. ROR IDs).
+    cleaned = re.sub(r"(?<![A-Za-z0-9/.])(\d+)(?=[A-Za-z])", r"\1 ", cleaned)
     cleaned = _strip_numeric_footnote_markers(cleaned)
     # Remove numeric affiliation markers that are typically superscript references.
     cleaned = re.sub(r"(^|[;,\(\[]\s*|\band\s+)\d+\s+(?=[A-Za-z])", r"\1", cleaned, flags=re.IGNORECASE)
@@ -890,28 +984,78 @@ def _looks_like_affiliation_text(value: str) -> bool:
 
 def _strip_affiliation_identifiers(value: str) -> str:
     cleaned = value
-    # External registry identifiers are not useful as affiliation labels in report output.
-    cleaned = re.sub(r"https?://ror\.org/[^\s;,.]+", " ", cleaned, flags=re.IGNORECASE)
+    grid_placeholders: dict[str, str] = {}
+    ror_placeholders: dict[str, str] = {}
+
+    def _protect_grid(match: re.Match[str]) -> str:
+        token = _normalize_grid_token(match.group(0))
+        key = f"__AFF_GRID_{len(grid_placeholders)}__"
+        grid_placeholders[key] = token
+        return key
+
+    def _protect_ror(match: re.Match[str]) -> str:
+        token = match.group(0)
+        key = f"__AFF_ROR_{len(ror_placeholders)}__"
+        ror_placeholders[key] = token
+        return key
+
+    cleaned = re.sub(r"https?://(?:www\.)?ror\.org/[0-9a-z]{9}", _protect_ror, cleaned, flags=re.IGNORECASE)
+    # Accept GRID tokens even when prefixed by numeric footnote markers
+    # (e.g. "1grid.239915.50000..."), so we preserve the real GRID value.
     cleaned = re.sub(
-        r"(^|;)\s*grid\s*[\.:]\s*(?:\d+(?:[.\s]\d+)*)?\s*",
-        r"\1 ",
+        r"(?<![A-Za-z])grid\s*\.\s*[a-z0-9]+\.[a-z0-9]+\b",
+        _protect_grid,
         cleaned,
         flags=re.IGNORECASE,
     )
-    cleaned = re.sub(
-        r"\bgrid\s*\.\s*(?:\d+(?:\s+\d+)*(?:\.\s*\d+(?:\s+\d+)*)*)?",
-        " ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(r"\bgrid\s*[\.:]\s*(?:\d+(?:[.\s]\d+)*)?", " ", cleaned, flags=re.IGNORECASE)
+    # Keep ROR/GRID identifiers so downstream record-level matching can prioritize
+    # them over free-text aliases (match_record: ROR/GRID > email > text).
     cleaned = re.sub(r"\b(?:orcid|orcid id)[:\s]*\d{4}(?:[-\s]\d{4}){2,3}\b", " ", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\b\d{4}(?:\s+\d{4}){2,3}\b", " ", cleaned)
+    cleaned = re.sub(r"\b\d{4}(?:\s+\d{4}){2,3}(?=\b|[A-Za-z])", " ", cleaned)
     # Drop compact identifier fragments stuck onto institution names (e.g. zjqec80HSS).
     cleaned = re.sub(r"\b[0-9a-z]{7,}(?=[A-Z])", " ", cleaned)
     cleaned = re.sub(r"\b\d+(?:\.\d+)+\b", " ", cleaned)
     cleaned = re.sub(r"(^|;)\s*[.,]+\s*", r"\1 ", cleaned)
+    for key, token in ror_placeholders.items():
+        cleaned = cleaned.replace(key, token)
+    for key, token in grid_placeholders.items():
+        cleaned = cleaned.replace(key, token)
     return cleaned
+
+
+def _normalize_grid_token(value: str) -> str:
+    match = re.search(r"grid\s*\.\s*([A-Za-z0-9]+)\.([A-Za-z0-9]+)", value, flags=re.IGNORECASE)
+    if match is None:
+        return value
+    segment = match.group(1).lower()
+    suffix_raw = match.group(2)
+    suffix = suffix_raw.lower()
+    attached_text = ""
+    # Publisher feeds often concatenate extra numeric IDs after the true GRID
+    # suffix (e.g. ".3c000000041936754", ".370000"). Trim those tails.
+    tail_match = re.fullmatch(r"([A-Za-z0-9]{1,2})0{3,}[0-9]*(?:X)?([A-Z][A-Za-z].*)?", suffix_raw)
+    if tail_match is not None:
+        compact = tail_match.group(1).lower().rstrip("0")
+        suffix = compact or tail_match.group(1)[0].lower()
+        attached = (tail_match.group(2) or "").strip()
+        if attached:
+            attached_text = f" {attached}"
+    return f"grid.{segment}.{suffix}{attached_text}"
+
+
+def _normalize_spaced_ror_urls(value: str) -> str:
+    def _collapse(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        spaced_id = match.group(2)
+        compact_id = re.sub(r"\s+", "", spaced_id)
+        return f"{prefix}{compact_id}"
+
+    return re.sub(
+        r"(https?://(?:www\.)?ror\.org/)\s*(0(?:\s*[0-9a-z]){8})",
+        _collapse,
+        value,
+        flags=re.IGNORECASE,
+    )
 
 
 def _strip_segment_prefix_markers(value: str) -> str:

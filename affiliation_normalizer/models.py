@@ -31,6 +31,7 @@ class MatchResult:
     state: str | None = None
     country: str | None = None
     ror_id: str | None = None
+    grid_id: str | None = None
     openalex_id: str | None = None
     confidence: float = 0.0
     matched_aliases: tuple[AliasHit, ...] = field(default_factory=tuple)

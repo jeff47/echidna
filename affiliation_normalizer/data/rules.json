@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "generated_at_utc": "2026-03-09T20:46:05.164064+00:00",
+    "generated_at_utc": "2026-03-10T18:25:48.347729+00:00",
     "master_path": "niaid_org_seed_master.csv",
     "alias_policy_path": "alias_policy_review.tsv",
     "precedence_path": "canonical_precedence.tsv",
@@ -15,6 +15,8 @@
       "state": "AL",
       "country": "US",
       "ror_id": "008s83205",
+      "grid_id": "grid.265892.2",
+      "email_domains": "uab.edu|uabmc.edu",
       "openalex_id": "I32389192",
       "nih_reporter_name": "UNIVERSITY OF ALABAMA AT BIRMINGHAM",
       "nih_reporter_ipf_code": "1288803"
@@ -26,6 +28,8 @@
       "state": "AR",
       "country": "US",
       "ror_id": "01t33qq42",
+      "grid_id": "grid.239305.e",
+      "email_domains": "uams.edu",
       "openalex_id": "I1301864278",
       "nih_reporter_name": "ARKANSAS CHILDREN'S HOSPITAL RES INST",
       "nih_reporter_ipf_code": "491702"
@@ -37,6 +41,8 @@
       "state": "AR",
       "country": "US",
       "ror_id": "005k4dn45",
+      "grid_id": "grid.416947.9",
+      "email_domains": "uams.edu",
       "openalex_id": "I79620101",
       "nih_reporter_name": "UNIVERSITY OF ARKANSAS FOR MEDICAL SCIENCES",
       "nih_reporter_ipf_code": "1471106"
@@ -48,6 +54,8 @@
       "state": "AZ",
       "country": "US",
       "ror_id": "03efmqc40",
+      "grid_id": "grid.215654.1",
+      "email_domains": "asu.edu",
       "openalex_id": "I55732556",
       "nih_reporter_name": "ARIZONA STATE UNIVERSITY-TEMPE CAMPUS",
       "nih_reporter_ipf_code": "488301"
@@ -59,6 +67,8 @@
       "state": "AZ",
       "country": "US",
       "ror_id": "03jp40720",
+      "grid_id": "grid.417468.8",
+      "email_domains": "mayo.edu",
       "openalex_id": "I4210125099",
       "nih_reporter_name": "MAYO CLINIC ARIZONA",
       "nih_reporter_ipf_code": "4976104"
@@ -70,6 +80,8 @@
       "state": "AZ",
       "country": "US",
       "ror_id": "03m2x1q45",
+      "grid_id": "grid.134563.6",
+      "email_domains": "arizona.edu",
       "openalex_id": "I138006243",
       "nih_reporter_name": "UNIVERSITY OF ARIZONA",
       "nih_reporter_ipf_code": "490201"
@@ -81,6 +93,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "01an7q238",
+      "grid_id": "grid.47840.3f",
+      "email_domains": "berkeley.edu",
       "openalex_id": "I95457486",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA BERKELEY",
       "nih_reporter_ipf_code": "577502"
@@ -92,6 +106,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05rrcem69",
+      "grid_id": "grid.27860.3b",
+      "email_domains": "ucdavis.edu",
       "openalex_id": "I84218800",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA AT DAVIS",
       "nih_reporter_ipf_code": "577503"
@@ -103,6 +119,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05fazth07",
+      "grid_id": "",
+      "email_domains": "coh.org",
       "openalex_id": "I4387156432",
       "nih_reporter_name": "BECKMAN RESEARCH INSTITUTE/CITY OF HOPE",
       "nih_reporter_ipf_code": "3058203"
@@ -114,6 +132,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "04gyf1771",
+      "grid_id": "grid.266093.8",
+      "email_domains": "uci.edu",
       "openalex_id": "I204250578",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA-IRVINE",
       "nih_reporter_ipf_code": "577504"
@@ -125,6 +145,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05vkpd318",
+      "grid_id": "grid.185006.a",
+      "email_domains": "lji.org",
       "openalex_id": "I1311191458",
       "nih_reporter_name": "LA JOLLA INSTITUTE FOR IMMUNOLOGY",
       "nih_reporter_ipf_code": "2465301"
@@ -136,6 +158,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "03xez1567",
+      "grid_id": "grid.250671.7",
+      "email_domains": "salk.edu",
       "openalex_id": "I1307098950",
       "nih_reporter_name": "SALK INSTITUTE FOR BIOLOGICAL STUDIES",
       "nih_reporter_ipf_code": "7210001"
@@ -147,6 +171,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "03m1g2s55",
+      "grid_id": "grid.479509.6",
+      "email_domains": "burnham.org|sanfordburnham.org|sbpdiscovery.edu",
       "openalex_id": "I188891513",
       "nih_reporter_name": "SANFORD BURNHAM PREBYS MEDICAL DISCOVERY INSTITUTE",
       "nih_reporter_ipf_code": "1180101"
@@ -158,6 +184,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "02dxx6824",
+      "grid_id": "grid.214007.0",
+      "email_domains": "scripps.edu",
       "openalex_id": "I123431417",
       "nih_reporter_name": "SCRIPPS RESEARCH INSTITUTE, THE",
       "nih_reporter_ipf_code": "7375802"
@@ -169,6 +197,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "0168r3w48",
+      "grid_id": "grid.266100.3",
+      "email_domains": "ucsd.edu",
       "openalex_id": "I36258959",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA, SAN DIEGO",
       "nih_reporter_ipf_code": "577507"
@@ -180,6 +210,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "02pammg90",
+      "grid_id": "grid.50956.3f",
+      "email_domains": "cshs.org|csmc.edu",
       "openalex_id": "I1282927834",
       "nih_reporter_name": "CEDARS-SINAI MEDICAL CENTER",
       "nih_reporter_ipf_code": "1225501"
@@ -191,6 +223,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "046rm7j60",
+      "grid_id": "grid.19006.3e",
+      "email_domains": "ucla.edu",
       "openalex_id": "I161318765",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA LOS ANGELES",
       "nih_reporter_ipf_code": "577505"
@@ -202,6 +236,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "03taz7m60",
+      "grid_id": "grid.42505.36",
+      "email_domains": "usc.edu",
       "openalex_id": "I1174212",
       "nih_reporter_name": "UNIVERSITY OF SOUTHERN CALIFORNIA",
       "nih_reporter_ipf_code": "7636101"
@@ -213,6 +249,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05s570m15",
+      "grid_id": "grid.98913.3a",
+      "email_domains": "",
       "openalex_id": "I1298353152",
       "nih_reporter_name": "SRI INTERNATIONAL",
       "nih_reporter_ipf_code": "8042701"
@@ -224,6 +262,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "00d9ah105",
+      "grid_id": "grid.266096.d",
+      "email_domains": "ucmerced.edu",
       "openalex_id": "I156087764",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA, MERCED",
       "nih_reporter_ipf_code": "10002981"
@@ -235,6 +275,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "00t60zh31",
+      "grid_id": "grid.280062.e",
+      "email_domains": "kp.org",
       "openalex_id": "I4210148877",
       "nih_reporter_name": "KAISER FOUNDATION RESEARCH INSTITUTE",
       "nih_reporter_ipf_code": "3497005"
@@ -246,6 +288,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05dxps055",
+      "grid_id": "grid.20861.3d",
+      "email_domains": "caltech.edu",
       "openalex_id": "I122411786",
       "nih_reporter_name": "CALIFORNIA INSTITUTE OF TECHNOLOGY",
       "nih_reporter_ipf_code": "1073501"
@@ -257,6 +301,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "03nawhv43",
+      "grid_id": "grid.266097.c",
+      "email_domains": "ucr.edu",
       "openalex_id": "I103635307",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA RIVERSIDE",
       "nih_reporter_ipf_code": "577506"
@@ -268,6 +314,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "038321296",
+      "grid_id": "grid.249878.8",
+      "email_domains": "gladstone.ucsf.edu",
       "openalex_id": "I1321430492",
       "nih_reporter_name": "J. DAVID GLADSTONE INSTITUTES",
       "nih_reporter_ipf_code": "1567601"
@@ -279,6 +327,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "043mz5j54",
+      "grid_id": "grid.266102.1",
+      "email_domains": "ucsf.edu",
       "openalex_id": "I180670191",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA, SAN FRANCISCO",
       "nih_reporter_ipf_code": "577508"
@@ -290,6 +340,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "03s65by71",
+      "grid_id": "grid.205975.c",
+      "email_domains": "ucsc.edu",
       "openalex_id": "I185103710",
       "nih_reporter_name": "UNIVERSITY OF CALIFORNIA SANTA CRUZ",
       "nih_reporter_ipf_code": "577510"
@@ -301,6 +353,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "00f54p054",
+      "grid_id": "grid.168010.e",
+      "email_domains": "stanford.edu",
       "openalex_id": "I97018004",
       "nih_reporter_name": "STANFORD UNIVERSITY",
       "nih_reporter_ipf_code": "8046501"
@@ -312,6 +366,8 @@
       "state": "CA",
       "country": "US",
       "ror_id": "05h4zj272",
+      "grid_id": "grid.239844.0",
+      "email_domains": "lundquist.org",
       "openalex_id": "I4210165985",
       "nih_reporter_name": "LUNDQUIST INSTITUTE FOR BIOMEDICAL INNOVATION AT HARBOR-UCLA MEDICAL CENTER",
       "nih_reporter_ipf_code": "2543101"
@@ -323,6 +379,8 @@
       "state": "CO",
       "country": "US",
       "ror_id": "02hh7en24",
+      "grid_id": "grid.241116.1",
+      "email_domains": "cuanschutz.edu|ucdenver.edu",
       "openalex_id": "I921990950",
       "nih_reporter_name": "UNIVERSITY OF COLORADO DENVER",
       "nih_reporter_ipf_code": "1199905"
@@ -334,6 +392,8 @@
       "state": "CO",
       "country": "US",
       "ror_id": "02ttsq026",
+      "grid_id": "grid.266190.a",
+      "email_domains": "colorado.edu",
       "openalex_id": "I188538660",
       "nih_reporter_name": "UNIVERSITY OF COLORADO",
       "nih_reporter_ipf_code": "1199902"
@@ -345,6 +405,8 @@
       "state": "CO",
       "country": "US",
       "ror_id": "016z2bp30",
+      "grid_id": "grid.240341.0",
+      "email_domains": "njhealth.org",
       "openalex_id": "I3019586173",
       "nih_reporter_name": "NATIONAL JEWISH HEALTH",
       "nih_reporter_ipf_code": "5720901"
@@ -356,6 +418,8 @@
       "state": "CO",
       "country": "US",
       "ror_id": "03k1gpj17",
+      "grid_id": "grid.47894.36",
+      "email_domains": "colostat.edu",
       "openalex_id": "I92446798",
       "nih_reporter_name": "COLORADO STATE UNIVERSITY",
       "nih_reporter_ipf_code": "1725201"
@@ -367,6 +431,8 @@
       "state": "CT",
       "country": "US",
       "ror_id": "02kzs4y22",
+      "grid_id": "grid.208078.5",
+      "email_domains": "uchc.edu",
       "openalex_id": "I75929689",
       "nih_reporter_name": "UNIVERSITY OF CONNECTICUT SCHOOL OF MED/DNT",
       "nih_reporter_ipf_code": "1506603"
@@ -378,6 +444,8 @@
       "state": "CT",
       "country": "US",
       "ror_id": "03v76x132",
+      "grid_id": "grid.47100.32",
+      "email_domains": "yale.edu",
       "openalex_id": "I32971472",
       "nih_reporter_name": "YALE UNIVERSITY",
       "nih_reporter_ipf_code": "9420201"
@@ -389,6 +457,8 @@
       "state": "DC",
       "country": "US",
       "ror_id": "00y4zzh67",
+      "grid_id": "grid.253615.6",
+      "email_domains": "gwu.edu",
       "openalex_id": "I193531525",
       "nih_reporter_name": "GEORGE WASHINGTON UNIVERSITY",
       "nih_reporter_ipf_code": "2863301"
@@ -400,6 +470,8 @@
       "state": "DC",
       "country": "US",
       "ror_id": "05vzafd60",
+      "grid_id": "grid.213910.8",
+      "email_domains": "georgetown.edu",
       "openalex_id": "I184565670",
       "nih_reporter_name": "GEORGETOWN UNIVERSITY",
       "nih_reporter_ipf_code": "2869001"
@@ -411,6 +483,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "02dgjyy92",
+      "grid_id": "grid.26790.3a",
+      "email_domains": "med.miami.edu",
       "openalex_id": "I145608581",
       "nih_reporter_name": "UNIVERSITY OF MIAMI SCHOOL OF MEDICINE",
       "nih_reporter_ipf_code": "5221250"
@@ -422,6 +496,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "02y3ad647",
+      "grid_id": "grid.15276.37",
+      "email_domains": "ufl.edu",
       "openalex_id": "I33213144",
       "nih_reporter_name": "UNIVERSITY OF FLORIDA",
       "nih_reporter_ipf_code": "513806"
@@ -433,6 +509,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "056pdzs28",
+      "grid_id": "",
+      "email_domains": "",
       "openalex_id": "I4387156289",
       "nih_reporter_name": "SCRIPPS FLORIDA",
       "nih_reporter_ipf_code": "10005569"
@@ -444,6 +522,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "02gz6gg07",
+      "grid_id": "grid.65456.34",
+      "email_domains": "fiu.edu",
       "openalex_id": "I19700959",
       "nih_reporter_name": "FLORIDA INTERNATIONAL UNIVERSITY",
       "nih_reporter_ipf_code": "513809"
@@ -455,6 +535,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "036nfer12",
+      "grid_id": "grid.170430.1",
+      "email_domains": "",
       "openalex_id": "I106165777",
       "nih_reporter_name": "UNIVERSITY OF CENTRAL FLORIDA",
       "nih_reporter_ipf_code": "513805"
@@ -466,6 +548,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "05g3dte14",
+      "grid_id": "grid.255986.5",
+      "email_domains": "fsu.edu",
       "openalex_id": "I103163165",
       "nih_reporter_name": "FLORIDA STATE UNIVERSITY",
       "nih_reporter_ipf_code": "513804"
@@ -477,6 +561,8 @@
       "state": "FL",
       "country": "US",
       "ror_id": "032db5x82",
+      "grid_id": "grid.170693.a",
+      "email_domains": "usf.edu",
       "openalex_id": "I2613432",
       "nih_reporter_name": "UNIVERSITY OF SOUTH FLORIDA",
       "nih_reporter_ipf_code": "513807"
@@ -488,6 +574,8 @@
       "state": "GA",
       "country": "US",
       "ror_id": "00te3t702",
+      "grid_id": "grid.213876.9",
+      "email_domains": "uga.edu",
       "openalex_id": "I165733156",
       "nih_reporter_name": "UNIVERSITY OF GEORGIA",
       "nih_reporter_ipf_code": "676602"
@@ -499,6 +587,8 @@
       "state": "GA",
       "country": "US",
       "ror_id": "03czfpz43",
+      "grid_id": "grid.189967.8",
+      "email_domains": "emory.edu",
       "openalex_id": "I150468666",
       "nih_reporter_name": "EMORY UNIVERSITY",
       "nih_reporter_ipf_code": "2384501"
@@ -510,6 +600,8 @@
       "state": "GA",
       "country": "US",
       "ror_id": "01zkghx44",
+      "grid_id": "grid.213917.f",
+      "email_domains": "gatech.edu",
       "openalex_id": "I130701444",
       "nih_reporter_name": "GEORGIA INSTITUTE OF TECHNOLOGY",
       "nih_reporter_ipf_code": "676603"
@@ -521,6 +613,8 @@
       "state": "GA",
       "country": "US",
       "ror_id": "03qt6ba18",
+      "grid_id": "grid.256304.6",
+      "email_domains": "gsu.edu",
       "openalex_id": "I181565077",
       "nih_reporter_name": "GEORGIA STATE UNIVERSITY",
       "nih_reporter_ipf_code": "676604"
@@ -532,6 +626,8 @@
       "state": "IA",
       "country": "US",
       "ror_id": "04rswrd78",
+      "grid_id": "grid.34421.30",
+      "email_domains": "iastate.edu",
       "openalex_id": "I173911158",
       "nih_reporter_name": "IOWA STATE UNIVERSITY",
       "nih_reporter_ipf_code": "3974801"
@@ -543,6 +639,8 @@
       "state": "IA",
       "country": "US",
       "ror_id": "036jqmy94",
+      "grid_id": "grid.214572.7",
+      "email_domains": "uiowa.edu",
       "openalex_id": "I126307644",
       "nih_reporter_name": "UNIVERSITY OF IOWA",
       "nih_reporter_ipf_code": "3972901"
@@ -554,6 +652,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "047426m28",
+      "grid_id": "grid.35403.31",
+      "email_domains": "illinois.edu|uiuc.edu",
       "openalex_id": "I157725225",
       "nih_reporter_name": "UNIVERSITY OF ILLINOIS AT URBANA-CHAMPAIGN",
       "nih_reporter_ipf_code": "577704"
@@ -565,6 +665,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "03a6zw892",
+      "grid_id": "grid.413808.6",
+      "email_domains": "luriechildrens.org",
       "openalex_id": "I1294278766",
       "nih_reporter_name": "LURIE CHILDREN'S HOSPITAL OF CHICAGO",
       "nih_reporter_ipf_code": "1525701"
@@ -576,6 +678,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "00m6w7z96",
+      "grid_id": "grid.443107.5",
+      "email_domains": "northwestern.edu",
       "openalex_id": "I111979921",
       "nih_reporter_name": "NORTHWESTERN UNIVERSITY AT CHICAGO",
       "nih_reporter_ipf_code": "6144650"
@@ -587,6 +691,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "01j7c0b24",
+      "grid_id": "grid.240684.c",
+      "email_domains": "rush.edu",
       "openalex_id": "I1285301757",
       "nih_reporter_name": "RUSH UNIVERSITY MEDICAL CENTER",
       "nih_reporter_ipf_code": "6644301"
@@ -598,6 +704,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "024mw5h28",
+      "grid_id": "grid.170205.1",
+      "email_domains": "uchicago.edu",
       "openalex_id": "I40347166",
       "nih_reporter_name": "UNIVERSITY OF CHICAGO",
       "nih_reporter_ipf_code": "1413601"
@@ -609,6 +717,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "02mpq6x41",
+      "grid_id": "grid.185648.6",
+      "email_domains": "uic.edu",
       "openalex_id": "I39422238",
       "nih_reporter_name": "UNIVERSITY OF ILLINOIS AT CHICAGO",
       "nih_reporter_ipf_code": "577703"
@@ -620,6 +730,8 @@
       "state": "IL",
       "country": "US",
       "ror_id": "04b6x2g63",
+      "grid_id": "grid.164971.c",
+      "email_domains": "luc.edu",
       "openalex_id": "I1925986",
       "nih_reporter_name": "LOYOLA UNIVERSITY CHICAGO",
       "nih_reporter_ipf_code": "4689203"
@@ -631,6 +743,8 @@
       "state": "IN",
       "country": "US",
       "ror_id": "01kg8sb98",
+      "grid_id": "grid.257410.5",
+      "email_domains": "iu.edu",
       "openalex_id": "I4210119109",
       "nih_reporter_name": "TRUSTEES OF INDIANA UNIVERSITY",
       "nih_reporter_ipf_code": "577805"
@@ -642,6 +756,8 @@
       "state": "IN",
       "country": "US",
       "ror_id": "03eftgw80",
+      "grid_id": "",
+      "email_domains": "indiana.edu|iu.edu",
       "openalex_id": "I4388446366",
       "nih_reporter_name": "INDIANA UNIVERSITY INDIANAPOLIS",
       "nih_reporter_ipf_code": "577806"
@@ -653,6 +769,8 @@
       "state": "IN",
       "country": "US",
       "ror_id": "04mwhg379",
+      "grid_id": "grid.443030.0",
+      "email_domains": "nd.edu",
       "openalex_id": "I107639228",
       "nih_reporter_name": "UNIVERSITY OF NOTRE DAME",
       "nih_reporter_ipf_code": "6169301"
@@ -664,6 +782,8 @@
       "state": "IN",
       "country": "US",
       "ror_id": "05p8z3f47",
+      "grid_id": "grid.411031.6",
+      "email_domains": "purdue.edu",
       "openalex_id": "I219193219",
       "nih_reporter_name": "PURDUE UNIVERSITY",
       "nih_reporter_ipf_code": "1481402"
@@ -675,6 +795,8 @@
       "state": "KS",
       "country": "US",
       "ror_id": "036c9yv20",
+      "grid_id": "grid.412016.0",
+      "email_domains": "kumc.edu",
       "openalex_id": "I4210128618",
       "nih_reporter_name": "UNIVERSITY OF KANSAS MEDICAL CENTER",
       "nih_reporter_ipf_code": "1484303"
@@ -686,6 +808,8 @@
       "state": "KS",
       "country": "US",
       "ror_id": "001tmjg57",
+      "grid_id": "grid.266515.3",
+      "email_domains": "ku.edu",
       "openalex_id": "I146416000",
       "nih_reporter_name": "UNIVERSITY OF KANSAS LAWRENCE",
       "nih_reporter_ipf_code": "1484302"
@@ -697,6 +821,8 @@
       "state": "KS",
       "country": "US",
       "ror_id": "05p1j8758",
+      "grid_id": "grid.36567.31",
+      "email_domains": "k-state.edu|ksu.edu",
       "openalex_id": "I189590672",
       "nih_reporter_name": "KANSAS STATE UNIVERSITY",
       "nih_reporter_ipf_code": "4202801"
@@ -708,6 +834,8 @@
       "state": "KY",
       "country": "US",
       "ror_id": "02k3smh20",
+      "grid_id": "grid.266539.d",
+      "email_domains": "uky.edu",
       "openalex_id": "I143302722",
       "nih_reporter_name": "UNIVERSITY OF KENTUCKY",
       "nih_reporter_ipf_code": "2793601"
@@ -719,6 +847,8 @@
       "state": "KY",
       "country": "US",
       "ror_id": "01ckdn478",
+      "grid_id": "grid.266623.5",
+      "email_domains": "",
       "openalex_id": "I142740786",
       "nih_reporter_name": "UNIVERSITY OF LOUISVILLE",
       "nih_reporter_ipf_code": "4679701"
@@ -730,6 +860,8 @@
       "state": "LA",
       "country": "US",
       "ror_id": "05ect4e57",
+      "grid_id": "grid.64337.35",
+      "email_domains": "lsu.edu",
       "openalex_id": "I121820613",
       "nih_reporter_name": "LOUISIANA STATE UNIVERSITY A&M COL BATON ROUGE",
       "nih_reporter_ipf_code": "577907"
@@ -741,6 +873,8 @@
       "state": "LA",
       "country": "US",
       "ror_id": "04vmvtb21",
+      "grid_id": "grid.265219.b",
+      "email_domains": "tulane.edu",
       "openalex_id": "I114832834",
       "nih_reporter_name": "TULANE UNIVERSITY OF LOUISIANA",
       "nih_reporter_ipf_code": "8424601"
@@ -752,6 +886,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "04drvxt59",
+      "grid_id": "grid.239395.7",
+      "email_domains": "bidmc.harvard.edu",
       "openalex_id": "I1316535847",
       "nih_reporter_name": "BETH ISRAEL DEACONESS MEDICAL CENTER",
       "nih_reporter_ipf_code": "758101"
@@ -763,6 +899,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "00dvg7y05",
+      "grid_id": "grid.2515.3",
+      "email_domains": "chboston.org|childriens.harvard.edu",
       "openalex_id": "I1288882113",
       "nih_reporter_name": "BOSTON CHILDREN'S HOSPITAL",
       "nih_reporter_ipf_code": "1504801"
@@ -774,6 +912,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "010b9wj87",
+      "grid_id": "grid.239424.a",
+      "email_domains": "bmc.org|bu.edu",
       "openalex_id": "I1286490081",
       "nih_reporter_name": "BOSTON MEDICAL CENTER",
       "nih_reporter_ipf_code": "3617301"
@@ -785,6 +925,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "05qwgg493",
+      "grid_id": "grid.189504.1",
+      "email_domains": "bmc.org|bu.edu",
       "openalex_id": "I111088046",
       "nih_reporter_name": "BOSTON UNIVERSITY MEDICAL CAMPUS",
       "nih_reporter_ipf_code": "894901"
@@ -796,6 +938,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "04b6nzv94",
+      "grid_id": "grid.62560.37",
+      "email_domains": "bwh.harvard.edu",
       "openalex_id": "I1283280774",
       "nih_reporter_name": "BRIGHAM AND WOMEN'S HOSPITAL",
       "nih_reporter_ipf_code": "1080401"
@@ -807,6 +951,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "02jzgtq86",
+      "grid_id": "grid.65499.37",
+      "email_domains": "dfci.harvard.edu",
       "openalex_id": "I4210117453",
       "nih_reporter_name": "DANA-FARBER CANCER INST",
       "nih_reporter_ipf_code": "1464901"
@@ -818,6 +964,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "03vek6s52",
+      "grid_id": "grid.38142.3c",
+      "email_domains": "hms.harvard.edu",
       "openalex_id": "I136199984",
       "nih_reporter_name": "HARVARD MEDICAL SCHOOL",
       "nih_reporter_ipf_code": "3212902"
@@ -829,6 +977,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "002pd6e78",
+      "grid_id": "grid.32224.35",
+      "email_domains": "mgh.harvard.edu",
       "openalex_id": "I4210087915",
       "nih_reporter_name": "MASSACHUSETTS GENERAL HOSPITAL",
       "nih_reporter_ipf_code": "4907701"
@@ -840,6 +990,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "04t5xt781",
+      "grid_id": "grid.261112.7",
+      "email_domains": "neu.edu|northeastern.edu",
       "openalex_id": "I12912129",
       "nih_reporter_name": "NORTHEASTERN UNIVERSITY",
       "nih_reporter_ipf_code": "6116101"
@@ -851,6 +1003,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "05wvpxv85",
+      "grid_id": "grid.429997.8",
+      "email_domains": "tufts.edu",
       "openalex_id": "I121934306",
       "nih_reporter_name": "TUFTS UNIVERSITY BOSTON",
       "nih_reporter_ipf_code": "8422704"
@@ -862,6 +1016,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "05a0ya142",
+      "grid_id": "grid.66859.34",
+      "email_domains": "broadinstitute.org",
       "openalex_id": "I107606265",
       "nih_reporter_name": "BROAD INSTITUTE, INC.",
       "nih_reporter_ipf_code": "10021177"
@@ -873,6 +1029,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "042nb2s44",
+      "grid_id": "grid.116068.8",
+      "email_domains": "mit.edu",
       "openalex_id": "I63966007",
       "nih_reporter_name": "MASSACHUSETTS INSTITUTE OF TECHNOLOGY",
       "nih_reporter_ipf_code": "4911501"
@@ -884,6 +1042,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "02n2fzt79",
+      "grid_id": "grid.208226.c",
+      "email_domains": "bc.edu",
       "openalex_id": "I103531236",
       "nih_reporter_name": "BOSTON COLLEGE",
       "nih_reporter_ipf_code": "872101"
@@ -895,6 +1055,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "0072zz521",
+      "grid_id": "grid.266683.f",
+      "email_domains": "umass.edu",
       "openalex_id": "I24603500",
       "nih_reporter_name": "UNIVERSITY OF MASSACHUSETTS AMHERST",
       "nih_reporter_ipf_code": "850904"
@@ -906,6 +1068,8 @@
       "state": "MA",
       "country": "US",
       "ror_id": "0464eyp60",
+      "grid_id": "grid.168645.8",
+      "email_domains": "umassmed.edu",
       "openalex_id": "I166722992",
       "nih_reporter_name": "UNIVERSITY OF MASSACHUSETTS MEDICAL SCHOOL WORCESTER",
       "nih_reporter_ipf_code": "850903"
@@ -917,6 +1081,8 @@
       "state": "MD",
       "country": "US",
       "ror_id": "00za53h95",
+      "grid_id": "grid.21107.35",
+      "email_domains": "jhmi.edu|jhu.edu",
       "openalex_id": "I145311948",
       "nih_reporter_name": "JOHNS HOPKINS UNIVERSITY",
       "nih_reporter_ipf_code": "4134401"
@@ -928,6 +1094,8 @@
       "state": "MD",
       "country": "US",
       "ror_id": "04rq5mt64",
+      "grid_id": "grid.411024.2",
+      "email_domains": "som.umaryland.edu",
       "openalex_id": "I126744593",
       "nih_reporter_name": "UNIVERSITY OF MARYLAND BALTIMORE",
       "nih_reporter_ipf_code": "820104"
@@ -939,6 +1107,8 @@
       "state": "MD",
       "country": "US",
       "ror_id": "04q9tew83",
+      "grid_id": "grid.201075.1",
+      "email_domains": "",
       "openalex_id": "I1280259254",
       "nih_reporter_name": "HENRY M. JACKSON FDN FOR THE ADV MIL/MED",
       "nih_reporter_ipf_code": "1809301"
@@ -950,6 +1120,8 @@
       "state": "MD",
       "country": "US",
       "ror_id": "047s2c258",
+      "grid_id": "grid.164295.d",
+      "email_domains": "umd.edu",
       "openalex_id": "I66946132",
       "nih_reporter_name": "UNIVERSITY OF MARYLAND, COLLEGE PARK",
       "nih_reporter_ipf_code": "820102"
@@ -961,6 +1133,8 @@
       "state": "ME",
       "country": "US",
       "ror_id": "021sy4w91",
+      "grid_id": "grid.249880.f",
+      "email_domains": "jax.org",
       "openalex_id": "I4210115256",
       "nih_reporter_name": "JACKSON LABORATORY",
       "nih_reporter_ipf_code": "7096501"
@@ -972,6 +1146,8 @@
       "state": "MI",
       "country": "US",
       "ror_id": "00jmfr291",
+      "grid_id": "grid.214458.e",
+      "email_domains": "umich.edu",
       "openalex_id": "I27837315",
       "nih_reporter_name": "UNIVERSITY OF MICHIGAN AT ANN ARBOR",
       "nih_reporter_ipf_code": "1506502"
@@ -983,6 +1159,8 @@
       "state": "MI",
       "country": "US",
       "ror_id": "01070mq45",
+      "grid_id": "grid.254444.7",
+      "email_domains": "wayne.edu",
       "openalex_id": "I185443292",
       "nih_reporter_name": "WAYNE STATE UNIVERSITY",
       "nih_reporter_ipf_code": "9110501"
@@ -994,6 +1172,8 @@
       "state": "MI",
       "country": "US",
       "ror_id": "05hs6h993",
+      "grid_id": "grid.17088.36",
+      "email_domains": "msu.edu",
       "openalex_id": "I87216513",
       "nih_reporter_name": "MICHIGAN STATE UNIVERSITY",
       "nih_reporter_ipf_code": "5245901"
@@ -1005,6 +1185,8 @@
       "state": "MN",
       "country": "US",
       "ror_id": "017zqws13",
+      "grid_id": "grid.17635.36",
+      "email_domains": "umn.edu",
       "openalex_id": "I130238516",
       "nih_reporter_name": "UNIVERSITY OF MINNESOTA",
       "nih_reporter_ipf_code": "1450402"
@@ -1016,6 +1198,8 @@
       "state": "MN",
       "country": "US",
       "ror_id": "02qp3tb03",
+      "grid_id": "grid.66875.3a",
+      "email_domains": "mayo.edu",
       "openalex_id": "I1330342723",
       "nih_reporter_name": "MAYO CLINIC ROCHESTER",
       "nih_reporter_ipf_code": "4976101"
@@ -1027,6 +1211,8 @@
       "state": "MO",
       "country": "US",
       "ror_id": "02ymw8z06",
+      "grid_id": "grid.134936.a",
+      "email_domains": "missouri.edu",
       "openalex_id": "I76835614",
       "nih_reporter_name": "UNIVERSITY OF MISSOURI-COLUMBIA",
       "nih_reporter_ipf_code": "578002"
@@ -1038,6 +1224,8 @@
       "state": "MO",
       "country": "US",
       "ror_id": "01p7jjy08",
+      "grid_id": "grid.262962.b",
+      "email_domains": "slu.edu",
       "openalex_id": "I47838141",
       "nih_reporter_name": "SAINT LOUIS UNIVERSITY",
       "nih_reporter_ipf_code": "7915401"
@@ -1049,6 +1237,8 @@
       "state": "MO",
       "country": "US",
       "ror_id": "01yc7t268",
+      "grid_id": "grid.4367.6",
+      "email_domains": "wustl.edu",
       "openalex_id": "I204465549",
       "nih_reporter_name": "WASHINGTON UNIVERSITY",
       "nih_reporter_ipf_code": "9083901"
@@ -1060,6 +1250,8 @@
       "state": "MT",
       "country": "US",
       "ror_id": "02w0trx84",
+      "grid_id": "grid.41891.35",
+      "email_domains": "montana.edu",
       "openalex_id": "I23732399",
       "nih_reporter_name": "MONTANA STATE UNIVERSITY - BOZEMAN",
       "nih_reporter_ipf_code": "1381004"
@@ -1071,6 +1263,8 @@
       "state": "MT",
       "country": "US",
       "ror_id": "0078xmk34",
+      "grid_id": "grid.253613.0",
+      "email_domains": "montana.edu|umt.edu",
       "openalex_id": "I6750721",
       "nih_reporter_name": "UNIVERSITY OF MONTANA",
       "nih_reporter_ipf_code": "1381006"
@@ -1082,6 +1276,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "0130frc33",
+      "grid_id": "grid.10698.36",
+      "email_domains": "unc.edu",
       "openalex_id": "I114027177",
       "nih_reporter_name": "UNIVERSITY OF NORTH CAROLINA CHAPEL HILL",
       "nih_reporter_ipf_code": "578206"
@@ -1093,6 +1289,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "00py81415",
+      "grid_id": "grid.26009.3d",
+      "email_domains": "duke.edu",
       "openalex_id": "I170897317",
       "nih_reporter_name": "DUKE UNIVERSITY",
       "nih_reporter_ipf_code": "2221101"
@@ -1104,6 +1302,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "01vx35703",
+      "grid_id": "grid.255364.3",
+      "email_domains": "ecu.edu",
       "openalex_id": "I186335123",
       "nih_reporter_name": "EAST CAROLINA UNIVERSITY",
       "nih_reporter_ipf_code": "578209"
@@ -1115,6 +1315,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "04tj63d06",
+      "grid_id": "grid.40803.3f",
+      "email_domains": "ncsu.edu",
       "openalex_id": "I137902535",
       "nih_reporter_name": "NORTH CAROLINA STATE UNIVERSITY RALEIGH",
       "nih_reporter_ipf_code": "578204"
@@ -1126,6 +1328,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "052tfza37",
+      "grid_id": "grid.62562.35",
+      "email_domains": "rti.org",
       "openalex_id": "I180297670",
       "nih_reporter_name": "RESEARCH TRIANGLE INSTITUTE",
       "nih_reporter_ipf_code": "6939101"
@@ -1137,6 +1341,8 @@
       "state": "NC",
       "country": "US",
       "ror_id": "0207ad724",
+      "grid_id": "grid.241167.7",
+      "email_domains": "wakehealth.edu|wfusm.edu",
       "openalex_id": "I47251452",
       "nih_reporter_name": "WAKE FOREST UNIVERSITY HEALTH SCIENCES",
       "nih_reporter_ipf_code": "9021205"
@@ -1148,6 +1354,8 @@
       "state": "ND",
       "country": "US",
       "ror_id": "04a5szx83",
+      "grid_id": "grid.266862.e",
+      "email_domains": "und.edu",
       "openalex_id": "I24571045",
       "nih_reporter_name": "UNIVERSITY OF NORTH DAKOTA",
       "nih_reporter_ipf_code": "6093301"
@@ -1159,6 +1367,8 @@
       "state": "NE",
       "country": "US",
       "ror_id": "05wf30g94",
+      "grid_id": "grid.254748.8",
+      "email_domains": "creighton.edu",
       "openalex_id": "I114493937",
       "nih_reporter_name": "CREIGHTON UNIVERSITY",
       "nih_reporter_ipf_code": "1943701"
@@ -1170,6 +1380,8 @@
       "state": "NE",
       "country": "US",
       "ror_id": "00thqtb16",
+      "grid_id": "grid.266813.8",
+      "email_domains": "unmc.edu",
       "openalex_id": "I59130452",
       "nih_reporter_name": "UNIVERSITY OF NEBRASKA MEDICAL CENTER",
       "nih_reporter_ipf_code": "578104"
@@ -1181,6 +1393,8 @@
       "state": "NH",
       "country": "US",
       "ror_id": "049s0rh22",
+      "grid_id": "grid.254880.3",
+      "email_domains": "dartmouth.edu",
       "openalex_id": "I107672454",
       "nih_reporter_name": "DARTMOUTH COLLEGE",
       "nih_reporter_ipf_code": "2021601"
@@ -1192,6 +1406,8 @@
       "state": "NJ",
       "country": "US",
       "ror_id": "008zj0x80",
+      "grid_id": "grid.239835.6",
+      "email_domains": "hmh-cdi.org",
       "openalex_id": "I1324520350",
       "nih_reporter_name": "HACKENSACK UNIVERSITY MEDICAL CENTER",
       "nih_reporter_ipf_code": "3117901"
@@ -1203,6 +1419,8 @@
       "state": "NJ",
       "country": "US",
       "ror_id": "014ye1258",
+      "grid_id": "",
+      "email_domains": "njms.rutgers.edu|rutgers.edu",
       "openalex_id": "I4402554120",
       "nih_reporter_name": "RBHS-NEW JERSEY MEDICAL SCHOOL",
       "nih_reporter_ipf_code": "10034169"
@@ -1214,6 +1432,8 @@
       "state": "NJ",
       "country": "US",
       "ror_id": "029z02k15",
+      "grid_id": "",
+      "email_domains": "njms.rutgers.edu|rutgers.edu",
       "openalex_id": "I4390039302",
       "nih_reporter_name": "RUTGERS BIOMEDICAL AND HEALTH SCIENCES",
       "nih_reporter_ipf_code": "10034168"
@@ -1225,6 +1445,8 @@
       "state": "NJ",
       "country": "US",
       "ror_id": "05vt9qd57",
+      "grid_id": "grid.430387.b",
+      "email_domains": "rutgers.edu",
       "openalex_id": "I102322142",
       "nih_reporter_name": "RUTGERS, THE STATE UNIVERSITY OF N.J.",
       "nih_reporter_ipf_code": "1196203"
@@ -1236,6 +1458,8 @@
       "state": "NJ",
       "country": "US",
       "ror_id": "00hx57361",
+      "grid_id": "grid.16750.35",
+      "email_domains": "princeton.edu",
       "openalex_id": "I20089843",
       "nih_reporter_name": "PRINCETON UNIVERSITY",
       "nih_reporter_ipf_code": "6661401"
@@ -1247,6 +1471,8 @@
       "state": "NM",
       "country": "US",
       "ror_id": "02jvjmd55",
+      "grid_id": "",
+      "email_domains": "salud.unm.edu",
       "openalex_id": "I4405255059",
       "nih_reporter_name": "UNIVERSITY OF NEW MEXICO HEALTH SCIENCES CTR",
       "nih_reporter_ipf_code": "10021612"
@@ -1258,6 +1484,8 @@
       "state": "NV",
       "country": "US",
       "ror_id": "01keh0577",
+      "grid_id": "grid.266818.3",
+      "email_domains": "unr.edu",
       "openalex_id": "I134113660",
       "nih_reporter_name": "UNIVERSITY OF NEVADA RENO",
       "nih_reporter_ipf_code": "829903"
@@ -1269,6 +1497,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "03g66yt05",
+      "grid_id": "",
+      "email_domains": "amc.edu",
       "openalex_id": "I4405260259",
       "nih_reporter_name": "ALBANY MEDICAL COLLEGE",
       "nih_reporter_ipf_code": "8455007"
@@ -1280,6 +1510,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "01y64my43",
+      "grid_id": "grid.273335.3",
+      "email_domains": "buffalo.edu",
       "openalex_id": "I63190737",
       "nih_reporter_name": "STATE UNIVERSITY OF NEW YORK AT BUFFALO",
       "nih_reporter_ipf_code": "5992614"
@@ -1291,6 +1523,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "05cf8a891",
+      "grid_id": "grid.251993.5",
+      "email_domains": "aecom.yu.edu|einsteinmed.edu",
       "openalex_id": "I129975664",
       "nih_reporter_name": "ALBERT EINSTEIN COLLEGE OF MEDICINE",
       "nih_reporter_ipf_code": "10053556"
@@ -1302,6 +1536,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "02qz8b764",
+      "grid_id": "grid.225279.9",
+      "email_domains": "cshl.edu",
       "openalex_id": "I2750212522",
       "nih_reporter_name": "COLD SPRING HARBOR LABORATORY",
       "nih_reporter_ipf_code": "4577101"
@@ -1313,6 +1549,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "05bnh6r87",
+      "grid_id": "grid.5386.8",
+      "email_domains": "cornell.edu",
       "openalex_id": "I205783295",
       "nih_reporter_name": "CORNELL UNIVERSITY",
       "nih_reporter_ipf_code": "1514802"
@@ -1324,6 +1562,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "05dnene97",
+      "grid_id": "grid.250903.d",
+      "email_domains": "northwell.edu",
       "openalex_id": "I1327576362",
       "nih_reporter_name": "FEINSTEIN INSTITUTE FOR MEDICAL RESEARCH",
       "nih_reporter_ipf_code": "4155008"
@@ -1335,6 +1575,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "050kf9c55",
+      "grid_id": "grid.465543.5",
+      "email_domains": "health.ny.gov",
       "openalex_id": "I1339417872",
       "nih_reporter_name": "WADSWORTH CENTER",
       "nih_reporter_ipf_code": "5966012"
@@ -1346,6 +1588,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "00hj8s172",
+      "grid_id": "grid.21729.3f",
+      "email_domains": "columbia.edu|cumc.columbia.edu",
       "openalex_id": "I78577930",
       "nih_reporter_name": "COLUMBIA UNIVERSITY HEALTH SCIENCES",
       "nih_reporter_ipf_code": "1833205"
@@ -1357,6 +1601,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "04a9tmd77",
+      "grid_id": "grid.59734.3c",
+      "email_domains": "mountsinai.org|mssm.edu",
       "openalex_id": "I98704320",
       "nih_reporter_name": "ICAHN SCHOOL OF MEDICINE AT MOUNT SINAI",
       "nih_reporter_ipf_code": "3839801"
@@ -1368,6 +1614,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "01xvcf081",
+      "grid_id": "grid.250415.7",
+      "email_domains": "nybloodcenter.org",
       "openalex_id": "I1343675862",
       "nih_reporter_name": "NEW YORK BLOOD CENTER",
       "nih_reporter_ipf_code": "1782801"
@@ -1379,6 +1627,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "0190ak572",
+      "grid_id": "grid.137628.9",
+      "email_domains": "med.nyu.edu|nyulangone.org|nyumc.org",
       "openalex_id": "I57206974",
       "nih_reporter_name": "NEW YORK UNIVERSITY SCHOOL OF MEDICINE",
       "nih_reporter_ipf_code": "5998304"
@@ -1390,6 +1640,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "0420db125",
+      "grid_id": "grid.134907.8",
+      "email_domains": "rockefeller.edu",
       "openalex_id": "I83399316",
       "nih_reporter_name": "ROCKEFELLER UNIVERSITY",
       "nih_reporter_ipf_code": "7056601"
@@ -1401,6 +1653,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "02yrq0923",
+      "grid_id": "grid.51462.34",
+      "email_domains": "mskcc.org",
       "openalex_id": "I1334819555",
       "nih_reporter_name": "SLOAN-KETTERING INSTITUTE CANCER RESEARCH",
       "nih_reporter_ipf_code": "5079202"
@@ -1412,6 +1666,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "02r109517",
+      "grid_id": "grid.471410.7",
+      "email_domains": "med.cornell.edu",
       "openalex_id": "I4387153466",
       "nih_reporter_name": "WEILL MEDICAL COLL OF CORNELL UNIV",
       "nih_reporter_ipf_code": "1514803"
@@ -1423,6 +1679,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "022kthw22",
+      "grid_id": "grid.16416.34",
+      "email_domains": "rochester.edu",
       "openalex_id": "I5388228",
       "nih_reporter_name": "UNIVERSITY OF ROCHESTER",
       "nih_reporter_ipf_code": "7047101"
@@ -1434,6 +1692,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "05qghxh33",
+      "grid_id": "grid.36425.36",
+      "email_domains": "stonybrook.edu|stonybrookmedicine.edu|sunysb.edu",
       "openalex_id": "I59553526",
       "nih_reporter_name": "STATE UNIVERSITY NEW YORK STONY BROOK",
       "nih_reporter_ipf_code": "5992612"
@@ -1445,6 +1705,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "040kfrw16",
+      "grid_id": "grid.411023.5",
+      "email_domains": "upstate.edu",
       "openalex_id": "I20388574",
       "nih_reporter_name": "UPSTATE MEDICAL UNIVERSITY",
       "nih_reporter_ipf_code": "5992619"
@@ -1456,6 +1718,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "01hcyya48",
+      "grid_id": "grid.239573.9",
+      "email_domains": "cchmc.org",
       "openalex_id": "I1285204247",
       "nih_reporter_name": "CINCINNATI CHILDRENS HOSP MEDICAL CTR",
       "nih_reporter_ipf_code": "615001"
@@ -1467,6 +1731,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "01e3m7079",
+      "grid_id": "grid.24827.3b",
+      "email_domains": "uc.edu",
       "openalex_id": "I63135867",
       "nih_reporter_name": "UNIVERSITY OF CINCINNATI",
       "nih_reporter_ipf_code": "1523902"
@@ -1478,6 +1744,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "051fd9666",
+      "grid_id": "grid.67105.35",
+      "email_domains": "case.edu|cwru.edu",
       "openalex_id": "I58956616",
       "nih_reporter_name": "CASE WESTERN RESERVE UNIVERSITY",
       "nih_reporter_ipf_code": "218601"
@@ -1489,6 +1757,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "02x4b0932",
+      "grid_id": "grid.254293.b",
+      "email_domains": "ccf.org",
       "openalex_id": "I36373038",
       "nih_reporter_name": "CLEVELAND CLINIC LERNER COM-CWRU",
       "nih_reporter_ipf_code": "10000858"
@@ -1500,6 +1770,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "00rs6vg23",
+      "grid_id": "grid.261331.4",
+      "email_domains": "osu.edu|osumc.edu",
       "openalex_id": "I52357470",
       "nih_reporter_name": "OHIO STATE UNIVERSITY",
       "nih_reporter_ipf_code": "6218701"
@@ -1511,6 +1783,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "003rfsp33",
+      "grid_id": "grid.240344.5",
+      "email_domains": "nationwidechildrens.org",
       "openalex_id": "I1314135232",
       "nih_reporter_name": "RESEARCH INSTITUTE NATIONWIDE CHILDREN'S HOSP",
       "nih_reporter_ipf_code": "1495302"
@@ -1522,6 +1796,8 @@
       "state": "OH",
       "country": "US",
       "ror_id": "01pbdzh19",
+      "grid_id": "grid.267337.4",
+      "email_domains": "utoledo.edu",
       "openalex_id": "I12057038",
       "nih_reporter_name": "UNIVERSITY OF TOLEDO HEALTH SCI CAMPUS",
       "nih_reporter_ipf_code": "229501"
@@ -1533,6 +1809,8 @@
       "state": "OK",
       "country": "US",
       "ror_id": "02aqsxs83",
+      "grid_id": "grid.266900.b",
+      "email_domains": "ou.edu",
       "openalex_id": "I8692664",
       "nih_reporter_name": "UNIVERSITY OF OKLAHOMA",
       "nih_reporter_ipf_code": "1524002"
@@ -1544,6 +1822,8 @@
       "state": "OK",
       "country": "US",
       "ror_id": "035z6xf33",
+      "grid_id": "grid.274264.1",
+      "email_domains": "omrf.org",
       "openalex_id": "I30558944",
       "nih_reporter_name": "OKLAHOMA MEDICAL RESEARCH FOUNDATION",
       "nih_reporter_ipf_code": "6239601"
@@ -1555,6 +1835,8 @@
       "state": "OK",
       "country": "US",
       "ror_id": "0457zbj98",
+      "grid_id": "grid.266902.9",
+      "email_domains": "ouhsc.edu",
       "openalex_id": "I49332381",
       "nih_reporter_name": "UNIVERSITY OF OKLAHOMA HLTH SCIENCES CTR",
       "nih_reporter_ipf_code": "1524003"
@@ -1566,6 +1848,8 @@
       "state": "OK",
       "country": "US",
       "ror_id": "01g9vbr38",
+      "grid_id": "grid.65519.3e",
+      "email_domains": "okstate.edu",
       "openalex_id": "I115475287",
       "nih_reporter_name": "OKLAHOMA STATE UNIVERSITY STILLWATER",
       "nih_reporter_ipf_code": "1450502"
@@ -1577,6 +1861,8 @@
       "state": "OR",
       "country": "US",
       "ror_id": "009avj582",
+      "grid_id": "grid.5288.7",
+      "email_domains": "ohsu.edu",
       "openalex_id": "I165690674",
       "nih_reporter_name": "OREGON HEALTH & SCIENCE UNIVERSITY",
       "nih_reporter_ipf_code": "6297007"
@@ -1588,6 +1874,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "01h22ap11",
+      "grid_id": "grid.240473.6",
+      "email_domains": "hmc.psu.edu|pennstatehealth.psu.edu|psu.edu",
       "openalex_id": "I82783531",
       "nih_reporter_name": "PENNSYLVANIA STATE UNIVERSITY HERSHEY MEDICAL CTR",
       "nih_reporter_ipf_code": "1524204"
@@ -1599,6 +1887,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "01z7r7q48",
+      "grid_id": "grid.239552.a",
+      "email_domains": "chop.edu|med.upenn.edu|pennmedicine.upenn.edu",
       "openalex_id": "I1335321130",
       "nih_reporter_name": "CHILDREN'S HOSP OF PHILADELPHIA",
       "nih_reporter_ipf_code": "1499101"
@@ -1610,6 +1900,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "04bdffz58",
+      "grid_id": "grid.166341.7",
+      "email_domains": "drexel.edu|drexelmed.edu",
       "openalex_id": "I72816309",
       "nih_reporter_name": "DREXEL UNIVERSITY",
       "nih_reporter_ipf_code": "2205901"
@@ -1621,6 +1913,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "0567t7073",
+      "grid_id": "grid.249335.a",
+      "email_domains": "fccc.edu",
       "openalex_id": "I1289437631",
       "nih_reporter_name": "RESEARCH INSTITUTE OF FOX CHASE CANCER CTR",
       "nih_reporter_ipf_code": "1190002"
@@ -1632,6 +1926,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "00kx1jb78",
+      "grid_id": "grid.264727.2",
+      "email_domains": "temple.edu",
       "openalex_id": "I84392919",
       "nih_reporter_name": "TEMPLE UNIVERSITY OF THE COMMONWEALTH",
       "nih_reporter_ipf_code": "8240301"
@@ -1643,6 +1939,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "00ysqcn41",
+      "grid_id": "grid.265008.9",
+      "email_domains": "jefferson.edu",
       "openalex_id": "I149251103",
       "nih_reporter_name": "THOMAS JEFFERSON UNIVERSITY",
       "nih_reporter_ipf_code": "4050801"
@@ -1654,6 +1952,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "00b30xv10",
+      "grid_id": "grid.25879.31",
+      "email_domains": "upenn.edu",
       "openalex_id": "I79576946",
       "nih_reporter_name": "UNIVERSITY OF PENNSYLVANIA",
       "nih_reporter_ipf_code": "6463801"
@@ -1665,6 +1965,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "04wncat98",
+      "grid_id": "grid.251075.4",
+      "email_domains": "wistar.org",
       "openalex_id": "I102322052",
       "nih_reporter_name": "WISTAR INSTITUTE",
       "nih_reporter_ipf_code": "9340401"
@@ -1676,6 +1978,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "01an3r305",
+      "grid_id": "grid.21925.3d",
+      "email_domains": "chp.edu|pitt.edu|upmc.edu",
       "openalex_id": "I170201317",
       "nih_reporter_name": "UNIVERSITY OF PITTSBURGH AT PITTSBURGH",
       "nih_reporter_ipf_code": "2059802"
@@ -1687,6 +1991,8 @@
       "state": "PA",
       "country": "US",
       "ror_id": "04p491231",
+      "grid_id": "grid.29857.31",
+      "email_domains": "psu.edu",
       "openalex_id": "I130769515",
       "nih_reporter_name": "PENNSYLVANIA STATE UNIVERSITY, THE",
       "nih_reporter_ipf_code": "1524202"
@@ -1698,6 +2004,8 @@
       "state": "RI",
       "country": "US",
       "ror_id": "05gq02987",
+      "grid_id": "grid.40263.33",
+      "email_domains": "brown.edu",
       "openalex_id": "I27804330",
       "nih_reporter_name": "BROWN UNIVERSITY",
       "nih_reporter_ipf_code": "1003201"
@@ -1709,6 +2017,8 @@
       "state": "RI",
       "country": "US",
       "ror_id": "01aw9fv09",
+      "grid_id": "grid.240588.3",
+      "email_domains": "brown.edu",
       "openalex_id": "I2800446032",
       "nih_reporter_name": "RHODE ISLAND HOSPITAL",
       "nih_reporter_ipf_code": "6959701"
@@ -1720,6 +2030,8 @@
       "state": "SC",
       "country": "US",
       "ror_id": "012jban78",
+      "grid_id": "grid.259828.c",
+      "email_domains": "musc.edu",
       "openalex_id": "I153297377",
       "nih_reporter_name": "MEDICAL UNIVERSITY OF SOUTH CAROLINA",
       "nih_reporter_ipf_code": "7575301"
@@ -1731,6 +2043,8 @@
       "state": "SC",
       "country": "US",
       "ror_id": "037s24f05",
+      "grid_id": "grid.26090.3d",
+      "email_domains": "clemson.edu",
       "openalex_id": "I8078737",
       "nih_reporter_name": "CLEMSON UNIVERSITY",
       "nih_reporter_ipf_code": "1626401"
@@ -1742,6 +2056,8 @@
       "state": "SC",
       "country": "US",
       "ror_id": "02b6qw903",
+      "grid_id": "grid.254567.7",
+      "email_domains": "sc.edu|uscmed.sc.edu",
       "openalex_id": "I155781252",
       "nih_reporter_name": "UNIVERSITY OF SOUTH CAROLINA AT COLUMBIA",
       "nih_reporter_ipf_code": "1524302"
@@ -1753,6 +2069,8 @@
       "state": "TN",
       "country": "US",
       "ror_id": "02r3e0967",
+      "grid_id": "grid.240871.8",
+      "email_domains": "stjude.org",
       "openalex_id": "I1313298211",
       "nih_reporter_name": "ST. JUDE CHILDREN'S RESEARCH HOSPITAL",
       "nih_reporter_ipf_code": "7893501"
@@ -1764,6 +2082,8 @@
       "state": "TN",
       "country": "US",
       "ror_id": "0011qv509",
+      "grid_id": "grid.267301.1",
+      "email_domains": "uthsc.edu",
       "openalex_id": "I160606119",
       "nih_reporter_name": "UNIVERSITY OF TENNESSEE HEALTH SCI CTR",
       "nih_reporter_ipf_code": "578302"
@@ -1775,6 +2095,8 @@
       "state": "TN",
       "country": "US",
       "ror_id": "02vm5rt34",
+      "grid_id": "grid.152326.1",
+      "email_domains": "vanderbilt.edu",
       "openalex_id": "I200719446",
       "nih_reporter_name": "VANDERBILT UNIVERSITY",
       "nih_reporter_ipf_code": "8721001"
@@ -1786,6 +2108,8 @@
       "state": "TN",
       "country": "US",
       "ror_id": "05dq2gs74",
+      "grid_id": "grid.412807.8",
+      "email_domains": "vanderbilt.edu|vumc.org",
       "openalex_id": "I901861585",
       "nih_reporter_name": "VANDERBILT UNIVERSITY MEDICAL CENTER",
       "nih_reporter_ipf_code": "10040927"
@@ -1797,6 +2121,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "00hj54h04",
+      "grid_id": "grid.89336.37",
+      "email_domains": "austin.utexas.edu",
       "openalex_id": "I86519309",
       "nih_reporter_name": "UNIVERSITY OF TEXAS AT AUSTIN",
       "nih_reporter_ipf_code": "578403"
@@ -1808,6 +2134,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "01f5ytq51",
+      "grid_id": "grid.264756.4",
+      "email_domains": "tamu.edu",
       "openalex_id": "I91045830",
       "nih_reporter_name": "TEXAS A&M AGRILIFE RESEARCH",
       "nih_reporter_ipf_code": "8266920"
@@ -1819,6 +2147,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "05byvp690",
+      "grid_id": "grid.267313.2",
+      "email_domains": "utsouthwestern.edu",
       "openalex_id": "I867280407",
       "nih_reporter_name": "UT SOUTHWESTERN MEDICAL CENTER",
       "nih_reporter_ipf_code": "578404"
@@ -1830,6 +2160,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "016tfm930",
+      "grid_id": "grid.176731.5",
+      "email_domains": "utmb.edu",
       "openalex_id": "I55302922",
       "nih_reporter_name": "UNIVERSITY OF TEXAS MEDICAL BR GALVESTON",
       "nih_reporter_ipf_code": "578406"
@@ -1841,6 +2173,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "02pttbw34",
+      "grid_id": "grid.39382.33",
+      "email_domains": "bcm.edu|bmc.tmc.edu",
       "openalex_id": "I181547552",
       "nih_reporter_name": "BAYLOR COLLEGE OF MEDICINE",
       "nih_reporter_ipf_code": "481201"
@@ -1852,6 +2186,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "027zt9171",
+      "grid_id": "grid.63368.38",
+      "email_domains": "houstonmethodist.org",
       "openalex_id": "I1295876152",
       "nih_reporter_name": "METHODIST HOSPITAL RESEARCH INSTITUTE",
       "nih_reporter_ipf_code": "10005742"
@@ -1863,6 +2199,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "008zs3103",
+      "grid_id": "grid.21940.3e",
+      "email_domains": "rice.edu",
       "openalex_id": "I74775410",
       "nih_reporter_name": "RICE UNIVERSITY",
       "nih_reporter_ipf_code": "9291001"
@@ -1874,6 +2212,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "03gds6c39",
+      "grid_id": "grid.267308.8",
+      "email_domains": "uth.tmc.edu",
       "openalex_id": "I919571938",
       "nih_reporter_name": "UNIVERSITY OF TEXAS HLTH SCI CTR HOUSTON",
       "nih_reporter_ipf_code": "578417"
@@ -1885,6 +2225,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "04twxam07",
+      "grid_id": "grid.240145.6",
+      "email_domains": "mdanderson.org",
       "openalex_id": "I1343551460",
       "nih_reporter_name": "UNIVERSITY OF TX MD ANDERSON CANCER CTR",
       "nih_reporter_ipf_code": "578407"
@@ -1896,6 +2238,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "00wbskb04",
+      "grid_id": "grid.250889.e",
+      "email_domains": "txbiomed.org",
       "openalex_id": "I1289525096",
       "nih_reporter_name": "TEXAS BIOMEDICAL RESEARCH INSTITUTE",
       "nih_reporter_ipf_code": "7660801"
@@ -1907,6 +2251,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "02f6dcw23",
+      "grid_id": "grid.267309.9",
+      "email_domains": "uthscsa.edu",
       "openalex_id": "I165951966",
       "nih_reporter_name": "UNIVERSITY OF TEXAS HLTH SCIENCE CENTER",
       "nih_reporter_ipf_code": "578418"
@@ -1918,6 +2264,8 @@
       "state": "TX",
       "country": "US",
       "ror_id": "01kd65564",
+      "grid_id": "grid.215352.2",
+      "email_domains": "utsa.edu",
       "openalex_id": "I45438204",
       "nih_reporter_name": "UNIVERSITY OF TEXAS SAN ANTONIO",
       "nih_reporter_ipf_code": "578416"
@@ -1929,6 +2277,8 @@
       "state": "UT",
       "country": "US",
       "ror_id": "03r0ha626",
+      "grid_id": "grid.223827.e",
+      "email_domains": "utah.edu",
       "openalex_id": "I223532165",
       "nih_reporter_name": "UTAH STATE HIGHER EDUCATION SYSTEM--UNIVERSITY OF UTAH",
       "nih_reporter_ipf_code": "514002"
@@ -1940,6 +2290,8 @@
       "state": "VA",
       "country": "US",
       "ror_id": "02smfhw86",
+      "grid_id": "grid.438526.e",
+      "email_domains": "vt.edu",
       "openalex_id": "I859038795",
       "nih_reporter_name": "VIRGINIA POLYTECHNIC INSTITUTE AND ST UNIV",
       "nih_reporter_ipf_code": "8968001"
@@ -1951,6 +2303,8 @@
       "state": "VA",
       "country": "US",
       "ror_id": "0153tk833",
+      "grid_id": "grid.27755.32",
+      "email_domains": "virginia.edu",
       "openalex_id": "I51556381",
       "nih_reporter_name": "UNIVERSITY OF VIRGINIA",
       "nih_reporter_ipf_code": "1526402"
@@ -1962,6 +2316,8 @@
       "state": "VA",
       "country": "US",
       "ror_id": "02nkdxk79",
+      "grid_id": "grid.224260.0",
+      "email_domains": "vcu.edu|vcuhealth.org",
       "openalex_id": "I184840846",
       "nih_reporter_name": "VIRGINIA COMMONWEALTH UNIVERSITY",
       "nih_reporter_ipf_code": "353201"
@@ -1973,6 +2329,8 @@
       "state": "VT",
       "country": "US",
       "ror_id": "0155zta11",
+      "grid_id": "grid.59062.38",
+      "email_domains": "uvm.edu",
       "openalex_id": "I111236770",
       "nih_reporter_name": "UNIVERSITY OF VERMONT & ST AGRIC COLLEGE",
       "nih_reporter_ipf_code": "8738101"
@@ -1984,6 +2342,8 @@
       "state": "WA",
       "country": "US",
       "ror_id": "05dk0ce17",
+      "grid_id": "grid.30064.31",
+      "email_domains": "wsu.edu",
       "openalex_id": "I72951846",
       "nih_reporter_name": "WASHINGTON STATE UNIVERSITY",
       "nih_reporter_ipf_code": "9082001"
@@ -1995,6 +2355,8 @@
       "state": "WA",
       "country": "US",
       "ror_id": "04j9rp686",
+      "grid_id": "",
+      "email_domains": "benaroyaresearch.org",
       "openalex_id": "I4391012615",
       "nih_reporter_name": "BENAROYA RESEARCH INSTITUTE AT VIRGINIA MASON",
       "nih_reporter_ipf_code": "8961401"
@@ -2006,6 +2368,8 @@
       "state": "WA",
       "country": "US",
       "ror_id": "007ps6h72",
+      "grid_id": "grid.270240.3",
+      "email_domains": "fhcrc.org|fredhutch.org",
       "openalex_id": "I4210089486",
       "nih_reporter_name": "FRED HUTCHINSON CANCER RESEARCH CENTER",
       "nih_reporter_ipf_code": "861001"
@@ -2017,6 +2381,8 @@
       "state": "WA",
       "country": "US",
       "ror_id": "01njes783",
+      "grid_id": "grid.240741.4",
+      "email_domains": "seattlechildrens.org",
       "openalex_id": "I1295499534",
       "nih_reporter_name": "SEATTLE CHILDREN'S HOSPITAL",
       "nih_reporter_ipf_code": "1531401"
@@ -2028,6 +2394,8 @@
       "state": "WA",
       "country": "US",
       "ror_id": "00cvxb145",
+      "grid_id": "grid.34477.33",
+      "email_domains": "washington.edu",
       "openalex_id": "I201448701",
       "nih_reporter_name": "UNIVERSITY OF WASHINGTON",
       "nih_reporter_ipf_code": "9087701"
@@ -2039,6 +2407,8 @@
       "state": "WI",
       "country": "US",
       "ror_id": "01y2jtd41",
+      "grid_id": "grid.14003.36",
+      "email_domains": "wisc.edu",
       "openalex_id": "I135310074",
       "nih_reporter_name": "UNIVERSITY OF WISCONSIN-MADISON",
       "nih_reporter_ipf_code": "578503"
@@ -2050,6 +2420,8 @@
       "state": "WI",
       "country": "US",
       "ror_id": "00qqv6244",
+      "grid_id": "grid.30760.32",
+      "email_domains": "mcw.edu",
       "openalex_id": "I204308271",
       "nih_reporter_name": "MEDICAL COLLEGE OF WISCONSIN",
       "nih_reporter_ipf_code": "46001"
@@ -2061,6 +2433,8 @@
       "state": "WV",
       "country": "US",
       "ror_id": "011vxgd24",
+      "grid_id": "grid.268154.c",
+      "email_domains": "wvu.edu",
       "openalex_id": "I12097938",
       "nih_reporter_name": "WEST VIRGINIA UNIVERSITY",
       "nih_reporter_ipf_code": "9163701"
@@ -2072,6 +2446,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "02bxt4m23",
+      "grid_id": "grid.416477.7",
+      "email_domains": "northwell.edu",
       "openalex_id": "I1302444339",
       "nih_reporter_name": "NORTHWELL HEALTH",
       "nih_reporter_ipf_code": "4155008"
@@ -2083,6 +2459,8 @@
       "state": "NY",
       "country": "US",
       "ror_id": "03zjqec80",
+      "grid_id": "grid.239915.5",
+      "email_domains": "hss.edu",
       "openalex_id": "I1281539108",
       "nih_reporter_name": "HOSPITAL FOR SPECIAL SURGERY",
       "nih_reporter_ipf_code": "4081105"
@@ -2094,6 +2472,8 @@
       "state": "CO",
       "country": "US",
       "ror_id": "03wmf1y16",
+      "grid_id": "grid.430503.1",
+      "email_domains": "cuanschutz.edu|ucdenver.edu",
       "openalex_id": "I51713134",
       "nih_reporter_name": "University of Colorado Denver | Anschutz Medical Campus",
       "nih_reporter_ipf_code": "1199905"
@@ -2172,21 +2552,21 @@
     },
     {
       "alias": "ARKANSAS CHILDREN'S HOSPITAL RES INST",
-      "alias_norm": "arkansas children s hospital res inst",
+      "alias_norm": "arkansas childrens hospital res inst",
       "canonical_id": "us-ar-arkansas-children-s-hospital-research-institute",
       "alias_type": "nih_name",
       "policy": "allow"
     },
     {
       "alias": "Arkansas Children's Hospital Research Institute",
-      "alias_norm": "arkansas children s hospital research institute",
+      "alias_norm": "arkansas childrens hospital research institute",
       "canonical_id": "us-ar-arkansas-children-s-hospital-research-institute",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Arkansas Children's Hospital Research Institute, LITTLE ROCK, AR",
-      "alias_norm": "arkansas children s hospital research institute little rock ar",
+      "alias_norm": "arkansas childrens hospital research institute little rock ar",
       "canonical_id": "us-ar-arkansas-children-s-hospital-research-institute",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -2298,14 +2678,14 @@
     },
     {
       "alias": "Boston Children's Hospital",
-      "alias_norm": "boston children s hospital",
+      "alias_norm": "boston childrens hospital",
       "canonical_id": "us-ma-boston-children-s-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Boston Children's Hospital, BOSTON, MA",
-      "alias_norm": "boston children s hospital boston ma",
+      "alias_norm": "boston childrens hospital boston ma",
       "canonical_id": "us-ma-boston-children-s-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -2382,14 +2762,14 @@
     },
     {
       "alias": "Brigham and Women's Hospital",
-      "alias_norm": "brigham and women s hospital",
+      "alias_norm": "brigham and womens hospital",
       "canonical_id": "us-ma-brigham-and-women-s-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Brigham and Women's Hospital, BOSTON, MA",
-      "alias_norm": "brigham and women s hospital boston ma",
+      "alias_norm": "brigham and womens hospital boston ma",
       "canonical_id": "us-ma-brigham-and-women-s-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -2487,14 +2867,14 @@
     },
     {
       "alias": "Children's Hosp of Philadelphia",
-      "alias_norm": "children s hosp of philadelphia",
+      "alias_norm": "childrens hosp of philadelphia",
       "canonical_id": "us-pa-children-s-hosp-of-philadelphia",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Children's Hosp of Philadelphia, PHILADELPHIA, PA",
-      "alias_norm": "children s hosp of philadelphia philadelphia pa",
+      "alias_norm": "childrens hosp of philadelphia philadelphia pa",
       "canonical_id": "us-pa-children-s-hosp-of-philadelphia",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -3348,21 +3728,21 @@
     },
     {
       "alias": "Lurie Children's Hospital",
-      "alias_norm": "lurie children s hospital",
+      "alias_norm": "lurie childrens hospital",
       "canonical_id": "us-il-lurie-children-s-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Lurie Children's Hospital, CHICAGO, IL",
-      "alias_norm": "lurie children s hospital chicago il",
+      "alias_norm": "lurie childrens hospital chicago il",
       "canonical_id": "us-il-lurie-children-s-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
     },
     {
       "alias": "LURIE CHILDREN'S HOSPITAL OF CHICAGO",
-      "alias_norm": "lurie children s hospital of chicago",
+      "alias_norm": "lurie childrens hospital of chicago",
       "canonical_id": "us-il-lurie-children-s-hospital",
       "alias_type": "nih_name",
       "policy": "allow"
@@ -3614,14 +3994,14 @@
     },
     {
       "alias": "Nationwide Children's Hospital",
-      "alias_norm": "nationwide children s hospital",
+      "alias_norm": "nationwide childrens hospital",
       "canonical_id": "us-oh-nationwide-children-s-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Nationwide Children's Hospital, COLUMBUS, OH",
-      "alias_norm": "nationwide children s hospital columbus oh",
+      "alias_norm": "nationwide childrens hospital columbus oh",
       "canonical_id": "us-oh-nationwide-children-s-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -3936,7 +4316,7 @@
     },
     {
       "alias": "RESEARCH INSTITUTE NATIONWIDE CHILDREN'S HOSP",
-      "alias_norm": "research institute nationwide children s hosp",
+      "alias_norm": "research institute nationwide childrens hosp",
       "canonical_id": "us-oh-nationwide-children-s-hospital",
       "alias_type": "nih_name",
       "policy": "allow"
@@ -4195,14 +4575,14 @@
     },
     {
       "alias": "Seattle Children's Hospital",
-      "alias_norm": "seattle children s hospital",
+      "alias_norm": "seattle childrens hospital",
       "canonical_id": "us-wa-seattle-children-s-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "Seattle Children's Hospital, SEATTLE, WA",
-      "alias_norm": "seattle children s hospital seattle wa",
+      "alias_norm": "seattle childrens hospital seattle wa",
       "canonical_id": "us-wa-seattle-children-s-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"
@@ -4258,14 +4638,14 @@
     },
     {
       "alias": "St. Jude Children's Research Hospital",
-      "alias_norm": "st jude children s research hospital",
+      "alias_norm": "st jude childrens research hospital",
       "canonical_id": "us-tn-st-jude-children-s-research-hospital",
       "alias_type": "canonical_name",
       "policy": "allow"
     },
     {
       "alias": "St. Jude Children's Research Hospital, MEMPHIS, TN",
-      "alias_norm": "st jude children s research hospital memphis tn",
+      "alias_norm": "st jude childrens research hospital memphis tn",
       "canonical_id": "us-tn-st-jude-children-s-research-hospital",
       "alias_type": "canonical_with_geo",
       "policy": "allow"

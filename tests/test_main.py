@@ -18,6 +18,8 @@ from app.main import (
     _build_out_of_window_rows,
     _orcid_row_fields,
     _partition_excluded_citation_rows,
+    _deserialize_author,
+    _serialize_author,
     _selected_default_excluded_type_terms,
     _with_row_render_fields,
     _xlsx_download_filename,
@@ -39,6 +41,40 @@ def _citation(pmid: str, *, year: int = 2024) -> Citation:
         ],
         source_for_roles="pmc",
     )
+
+
+def test_author_serialization_roundtrip_preserves_affiliation_blocks() -> None:
+    author = Author(
+        position=1,
+        last_name="Rice",
+        fore_name="Jeffrey",
+        initials="J",
+        affiliation="Inst A; Inst B",
+        affiliation_blocks=["Inst A", "Inst B"],
+    )
+
+    payload = _serialize_author(author)
+    restored = _deserialize_author(payload)
+
+    assert payload["affiliation_blocks"] == ["Inst A", "Inst B"]
+    assert restored.affiliation == "Inst A; Inst B"
+    assert restored.affiliation_blocks == ["Inst A", "Inst B"]
+
+
+def test_deserialize_author_backfills_affiliation_blocks_from_legacy_affiliation() -> None:
+    payload = {
+        "position": 1,
+        "last_name": "Rice",
+        "fore_name": "Jeffrey",
+        "initials": "J",
+        "affiliation": "Inst A; Inst B",
+        "orcid": "",
+    }
+
+    restored = _deserialize_author(payload)
+
+    assert restored.affiliation == "Inst A; Inst B"
+    assert restored.affiliation_blocks == ["Inst A", "Inst B"]
 
 
 def test_citation_selection_marks_review_when_multiple_positions_exist_across_all_matches() -> None:

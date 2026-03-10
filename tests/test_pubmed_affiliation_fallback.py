@@ -31,6 +31,8 @@ def test_single_article_affiliation_applied_to_all_missing_authors() -> None:
     assert len(authors) == 2
     assert authors[0].affiliation == "Department of Immunology, Example Institute"
     assert authors[1].affiliation == "Department of Immunology, Example Institute"
+    assert authors[0].affiliation_blocks == ["Department of Immunology, Example Institute"]
+    assert authors[1].affiliation_blocks == ["Department of Immunology, Example Institute"]
 
 
 def test_multiple_article_affiliations_not_forced_onto_all_authors() -> None:
@@ -62,6 +64,8 @@ def test_multiple_article_affiliations_not_forced_onto_all_authors() -> None:
     assert len(authors) == 2
     assert authors[0].affiliation == ""
     assert authors[1].affiliation == ""
+    assert authors[0].affiliation_blocks == []
+    assert authors[1].affiliation_blocks == []
 
 
 def test_single_author_level_affiliation_propagates_to_missing_authors() -> None:
@@ -94,6 +98,8 @@ def test_single_author_level_affiliation_propagates_to_missing_authors() -> None
     assert len(authors) == 2
     assert authors[0].affiliation == "Division of Immunology, Example Institute"
     assert authors[1].affiliation == "Division of Immunology, Example Institute"
+    assert authors[0].affiliation_blocks == ["Division of Immunology, Example Institute"]
+    assert authors[1].affiliation_blocks == ["Division of Immunology, Example Institute"]
 
 
 def test_normalize_affiliation_text_adds_missing_spaces_for_numeric_markers() -> None:
@@ -125,31 +131,68 @@ def test_normalize_affiliation_text_collapses_merged_department_markers() -> Non
     )
 
 
-def test_normalize_affiliation_text_strips_grid_and_marker_prefixes() -> None:
+def test_normalize_affiliation_text_preserves_grid_and_cleans_numeric_artifacts() -> None:
     raw = (
         "grid.5386.8000000041936877 XWeill Cornell Medicine, New York, NY USA; "
         "grid.239915.50000 0001 2285 8823 Hospital for Special Surgery, E 70 th Street, New York, NY 10021 USA"
     )
     normalized = _normalize_affiliation_text(raw)
-    assert "grid." not in normalized.lower()
+    assert "grid." in normalized.lower()
     assert "XWeill" not in normalized
-    assert "grid." not in normalized.lower()
     assert "0001 2285 8823" not in normalized
     assert "Weill Cornell Medicine" in normalized
     assert "E 70th Street" in normalized
 
 
-def test_normalize_affiliation_text_strips_ror_url_and_id_fragments() -> None:
+def test_normalize_affiliation_text_preserves_ror_and_strips_compact_id_fragments() -> None:
     raw = (
         "https://ror.org/03 zjqec80HSS Research Institute, Hospital for Special Surgery New York United States; "
         "https://ror.org/02 r109517Immunology and Microbial Pathogenesis Program, Weill Cornell Medicine New York United States"
     )
     normalized = _normalize_affiliation_text(raw)
-    assert "https://ror.org" not in normalized
-    assert "zjqec80" not in normalized
-    assert "r109517" not in normalized
+    assert "https://ror.org/03zjqec80 HSS Research Institute" in normalized
+    assert "https://ror.org/02r109517 Immunology and Microbial Pathogenesis Program" in normalized
+    assert "https://ror.org/03 zjqec80" not in normalized
+    assert "https://ror.org/02 r109517" not in normalized
     assert "HSS Research Institute" in normalized
     assert "Immunology and Microbial Pathogenesis Program" in normalized
+
+
+def test_normalize_affiliation_text_collapses_spaced_ror_and_separates_grid_boundary() -> None:
+    raw = (
+        "https://ror.org/03 vek6s52grid.38142. Transplantation Research Center, Renal Division, "
+        "Brigham and Women's Hospital, Harvard Medical School, Boston, MA USA"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "https://ror.org/03vek6s52 grid.38142." in normalized
+    assert "https://ror.org/03 vek6s52" not in normalized
+
+
+def test_normalize_affiliation_text_preserves_grid_numeric_segments_from_concatenated_ids() -> None:
+    raw = (
+        "https://ror.org/04b6nzv94grid.62560.370000 0004 0378 8294Department of Medicine, "
+        "Transplantation Research Center, Division of Renal Medicine, Brigham and Women's Hospital, Boston, MA USA"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "https://ror.org/04b6nzv94 grid.62560.37" in normalized
+    assert "grid. " not in normalized
+
+
+def test_normalize_affiliation_text_preserves_grid_when_prefixed_by_numeric_marker() -> None:
+    raw = "1grid.239915.50000 0001 2285 8823Hospital for Special Surgery, 535 E 70th Street, New York, NY 10009 USA"
+    normalized = _normalize_affiliation_text(raw)
+    assert "grid.239915.5 Hospital for Special Surgery" in normalized
+    assert "grid. 0001 2285 8823" not in normalized
+
+
+def test_normalize_affiliation_text_preserves_text_after_trimmed_grid_tail() -> None:
+    raw = (
+        "1https://ror.org/03vek6s52grid.38142.3c000000041936754XTransplantation Research Center, "
+        "Renal Division, Brigham and Women's Hospital, Harvard Medical School, Boston, MA USA"
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "https://ror.org/03vek6s52 grid.38142.3c Transplantation Research Center" in normalized
+    assert "grid.38142.3c000000041936754" not in normalized
 
 
 def test_normalize_affiliation_text_removes_single_letter_prefix_with_space() -> None:
@@ -159,15 +202,15 @@ def test_normalize_affiliation_text_removes_single_letter_prefix_with_space() ->
     assert not normalized.startswith("a ")
 
 
-def test_normalize_affiliation_text_strips_grid_artifacts_from_donlin_examples() -> None:
+def test_normalize_affiliation_text_preserves_grid_from_donlin_examples() -> None:
     raw = (
         "grid. 0001 2285 8823 Hospital for Special Surgery, E 70th Street, New York, NY 10009 USA; "
         "grid.5386. Weill Cornell Medicine, New York, NY USA"
     )
     normalized = _normalize_affiliation_text(raw)
-    assert "grid" not in normalized.lower()
-    assert normalized.startswith("Hospital for Special Surgery")
-    assert "; Weill Cornell Medicine" in normalized
+    assert "grid" in normalized.lower()
+    assert "Hospital for Special Surgery" in normalized
+    assert "Weill Cornell Medicine" in normalized
 
 
 def test_normalize_affiliation_text_strips_superscript_marker_prefix() -> None:
