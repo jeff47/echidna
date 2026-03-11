@@ -158,6 +158,18 @@ def test_normalize_affiliation_text_preserves_ror_and_strips_compact_id_fragment
     assert "Immunology and Microbial Pathogenesis Program" in normalized
 
 
+def test_normalize_affiliation_text_separates_ror_ids_from_concatenated_institution_tokens() -> None:
+    raw = (
+        "https://ror.org/03czfpz43Emory University, Atlanta, GA, USA.; "
+        "Department of Pediatric Infectious Diseases, https://ror.org/04teye511Pontificia Universidad Católica de Chile, Santiago, Chile."
+    )
+    normalized = _normalize_affiliation_text(raw)
+    assert "https://ror.org/03czfpz43 Emory University" in normalized
+    assert "https://ror.org/04teye511 Pontificia Universidad Católica de Chile" in normalized
+    assert "https://ror.org/03czfpz43Emory" not in normalized
+    assert "https://ror.org/04teye511Pontificia" not in normalized
+
+
 def test_normalize_affiliation_text_collapses_spaced_ror_and_separates_grid_boundary() -> None:
     raw = (
         "https://ror.org/03 vek6s52grid.38142. Transplantation Research Center, Renal Division, "

@@ -182,6 +182,197 @@ UC_CAMPUS_ALIASES = {
 }
 
 
+@dataclass(frozen=True)
+class UniversitySystemRule:
+    label: str
+    system_phrases: tuple[str, ...]
+    system_tokens: frozenset[str]
+    campus_aliases: tuple[tuple[str, str], ...]
+
+
+US_UNIVERSITY_SYSTEM_RULES: tuple[UniversitySystemRule, ...] = (
+    UniversitySystemRule(
+        label="University of California",
+        system_phrases=("university of california", "university of california system"),
+        system_tokens=frozenset(
+            {
+                "uc",
+                "ucb",
+                "ucberkeley",
+                "ucd",
+                "ucdavis",
+                "uci",
+                "ucirvine",
+                "ucla",
+                "ucm",
+                "ucmerced",
+                "ucr",
+                "ucriverside",
+                "ucsb",
+                "ucsantabarbara",
+                "ucsc",
+                "ucsantacruz",
+                "ucsd",
+                "ucsf",
+            }
+        ),
+        campus_aliases=tuple(UC_CAMPUS_ALIASES.items()),
+    ),
+    UniversitySystemRule(
+        label="University of North Carolina",
+        system_phrases=("university of north carolina", "unc system"),
+        system_tokens=frozenset({"unc", "uncch", "uncc", "uncg", "uncw", "ncsu", "ncstate"}),
+        campus_aliases=(
+            ("chapel hill", "Chapel Hill"),
+            ("charlotte", "Charlotte"),
+            ("greensboro", "Greensboro"),
+            ("wilmington", "Wilmington"),
+            ("asheville", "Asheville"),
+            ("pembroke", "Pembroke"),
+            ("boone", "Boone"),
+            ("cullowhee", "Cullowhee"),
+            ("greenville", "Greenville"),
+            ("raleigh", "Raleigh"),
+            ("fayetteville", "Fayetteville"),
+            ("elizabeth city", "Elizabeth City"),
+            ("winston salem", "Winston-Salem"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="University of Texas",
+        system_phrases=("university of texas", "ut system"),
+        system_tokens=frozenset(
+            {
+                "utaustin",
+                "utarlington",
+                "utdallas",
+                "utep",
+                "utrgv",
+                "utsa",
+                "uttyler",
+                "utpb",
+                "utpermianbasin",
+                "utmb",
+                "uthealth",
+                "uthouston",
+                "utsouthwestern",
+                "utmda",
+                "mdanderson",
+            }
+        ),
+        campus_aliases=(
+            ("austin", "Austin"),
+            ("arlington", "Arlington"),
+            ("dallas", "Dallas"),
+            ("el paso", "El Paso"),
+            ("rio grande valley", "Rio Grande Valley"),
+            ("san antonio", "San Antonio"),
+            ("tyler", "Tyler"),
+            ("permian basin", "Permian Basin"),
+            ("galveston", "Galveston"),
+            ("houston", "Houston"),
+            ("md anderson", "Houston"),
+            ("southwestern", "Dallas"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="University of Colorado",
+        system_phrases=("university of colorado", "cu system"),
+        system_tokens=frozenset({"cuboulder", "cudenver", "uccs", "cuanschutz"}),
+        campus_aliases=(
+            ("boulder", "Boulder"),
+            ("denver", "Denver"),
+            ("colorado springs", "Colorado Springs"),
+            ("anschutz", "Anschutz Medical Campus"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="University of Massachusetts",
+        system_phrases=("university of massachusetts", "umass system"),
+        system_tokens=frozenset({"umass", "umassamherst", "umassboston", "umassdartmouth", "umasslowell", "umasschan"}),
+        campus_aliases=(
+            ("amherst", "Amherst"),
+            ("boston", "Boston"),
+            ("dartmouth", "Dartmouth"),
+            ("lowell", "Lowell"),
+            ("worcester", "Chan Medical School"),
+            ("chan", "Chan Medical School"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="University of Wisconsin",
+        system_phrases=("university of wisconsin", "uw system"),
+        system_tokens=frozenset({"uwmadison", "uwmilwaukee", "uwgreenbay", "uweauclaire", "uwlacrosse"}),
+        campus_aliases=(
+            ("madison", "Madison"),
+            ("milwaukee", "Milwaukee"),
+            ("green bay", "Green Bay"),
+            ("eau claire", "Eau Claire"),
+            ("la crosse", "La Crosse"),
+            ("oshkosh", "Oshkosh"),
+            ("platteville", "Platteville"),
+            ("river falls", "River Falls"),
+            ("stevens point", "Stevens Point"),
+            ("stout", "Stout"),
+            ("superior", "Superior"),
+            ("whitewater", "Whitewater"),
+            ("parkside", "Parkside"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="State University of New York",
+        system_phrases=("state university of new york", "suny"),
+        system_tokens=frozenset({"suny"}),
+        campus_aliases=(
+            ("albany", "Albany"),
+            ("binghamton", "Binghamton"),
+            ("buffalo", "Buffalo"),
+            ("stony brook", "Stony Brook"),
+            ("new paltz", "New Paltz"),
+            ("oswego", "Oswego"),
+            ("geneseo", "Geneseo"),
+            ("purchase", "Purchase"),
+            ("potsdam", "Potsdam"),
+            ("plattsburgh", "Plattsburgh"),
+            ("fredonia", "Fredonia"),
+            ("cortland", "Cortland"),
+            ("brockport", "Brockport"),
+            ("oneonta", "Oneonta"),
+            ("upstate", "Upstate Medical University"),
+            ("downstate", "Downstate Health Sciences University"),
+            ("polytechnic", "Polytechnic Institute"),
+            ("esf", "College of Environmental Science and Forestry"),
+            ("optometry", "College of Optometry"),
+            ("maritime", "Maritime College"),
+        ),
+    ),
+    UniversitySystemRule(
+        label="City University of New York",
+        system_phrases=("city university of new york", "cuny"),
+        system_tokens=frozenset({"cuny"}),
+        campus_aliases=(
+            ("baruch", "Baruch College"),
+            ("brooklyn college", "Brooklyn College"),
+            ("city college", "City College"),
+            ("hunter college", "Hunter College"),
+            ("queens college", "Queens College"),
+            ("lehman college", "Lehman College"),
+            ("john jay", "John Jay College"),
+            ("staten island", "College of Staten Island"),
+            ("medgar evers", "Medgar Evers College"),
+            ("borough of manhattan", "Borough of Manhattan Community College"),
+            ("bmcc", "Borough of Manhattan Community College"),
+            ("kingsborough", "Kingsborough Community College"),
+            ("queensborough", "Queensborough Community College"),
+            ("laguardia", "LaGuardia Community College"),
+            ("graduate center", "Graduate Center"),
+            ("school of law", "School of Law"),
+            ("school of public health", "School of Public Health"),
+        ),
+    ),
+)
+
+
 def normalize_token(value: str) -> str:
     return NON_ALPHA_NUM.sub("", value.lower())
 
@@ -414,9 +605,12 @@ def affiliation_blocks_fingerprint(affiliation_blocks: list[str], *, fallback_af
     if not blocks:
         return "no-affiliation"
 
+    us_system_context: set[str] = set()
+    for block in blocks:
+        us_system_context.update(_mentioned_us_university_systems(block))
     keys: set[str] = set()
     for block in blocks:
-        institutions = _extract_institution_names(block)
+        institutions = _extract_institution_names(block, us_system_context=us_system_context)
         keys.update(_institution_key(name) for name in institutions if _institution_key(name))
     sorted_keys = sorted(keys)
     if sorted_keys:
@@ -447,7 +641,7 @@ def _author_record_affiliation_blocks(author: Author) -> list[str]:
     )
 
 
-def _extract_institution_names(affiliation: str) -> list[str]:
+def _extract_institution_names(affiliation: str, *, us_system_context: set[str] | None = None) -> list[str]:
     raw_affiliation = affiliation.strip()
     if not raw_affiliation:
         return []
@@ -506,12 +700,18 @@ def _extract_institution_names(affiliation: str) -> list[str]:
     if text_names:
         return text_names
 
-    # Support UC system strings where campus is present elsewhere in the AD line.
-    uc_campus = _uc_campus_from_text(raw_affiliation)
-    if uc_campus:
-        result = match_affiliation(f"University of California, {uc_campus}")
+    # Support US university-system strings where campus is present elsewhere
+    # in the AD line, including split blocks like:
+    # "Davis, CA | University of California System".
+    inferred_system_label = _infer_us_university_system_label(
+        raw_affiliation,
+        us_system_context=us_system_context,
+    )
+    if inferred_system_label:
+        result = match_affiliation(inferred_system_label)
         if result.status == "matched" and result.canonical_name:
             return [_normalize_institution_label(result.canonical_name)]
+        return [_normalize_institution_label(inferred_system_label)]
 
     return []
 
@@ -693,12 +893,7 @@ def _looks_like_geo_only_phrase(normalized: str) -> bool:
 
 
 def _uc_campus_from_text(value: str) -> str:
-    clauses: list[str] = []
-    for piece in AFFILIATION_PIECE_SPLIT.split(value):
-        if not piece.strip():
-            continue
-        clauses.extend(clause.strip() for clause in piece.split(",") if clause.strip())
-    return _uc_campus_from_clauses(clauses)
+    return _campus_from_clauses(_affiliation_clauses(value), tuple(UC_CAMPUS_ALIASES.items()))
 
 
 def _institution_candidates(piece: str, *, uc_campus_hint: str = "") -> list[tuple[int, str, str]]:
@@ -736,13 +931,58 @@ def _expand_institution_clause(clause: str, clauses: list[str], *, uc_campus_hin
 
 
 def _uc_campus_from_clauses(clauses: list[str]) -> str:
+    return _campus_from_clauses(clauses, tuple(UC_CAMPUS_ALIASES.items()))
+
+
+def _affiliation_clauses(value: str) -> list[str]:
+    clauses: list[str] = []
+    for piece in AFFILIATION_PIECE_SPLIT.split(value):
+        if not piece.strip():
+            continue
+        clauses.extend(clause.strip() for clause in piece.split(",") if clause.strip())
+    return clauses
+
+
+def _campus_from_clauses(clauses: list[str], campus_aliases: tuple[tuple[str, str], ...]) -> str:
     for clause in clauses:
         normalized_clause = normalize_text(_normalize_institution_label(clause))
         if not normalized_clause:
             continue
-        for alias, campus in UC_CAMPUS_ALIASES.items():
-            if alias in normalized_clause:
+        for alias, campus in campus_aliases:
+            if _phrase_in_text(alias, normalized_clause):
                 return campus
+    return ""
+
+
+def _phrase_in_text(phrase: str, text: str) -> bool:
+    return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text))
+
+
+def _mentions_university_system(value: str, rule: UniversitySystemRule) -> bool:
+    normalized = normalize_text(_normalize_institution_label(value))
+    if any(phrase in normalized for phrase in rule.system_phrases):
+        return True
+    tokens = set(re.findall(r"[a-z0-9]+", normalized))
+    return bool(tokens & rule.system_tokens)
+
+
+def _mentioned_us_university_systems(value: str) -> set[str]:
+    labels: set[str] = set()
+    for rule in US_UNIVERSITY_SYSTEM_RULES:
+        if _mentions_university_system(value, rule):
+            labels.add(rule.label)
+    return labels
+
+
+def _infer_us_university_system_label(value: str, *, us_system_context: set[str] | None = None) -> str:
+    clauses = _affiliation_clauses(value)
+    context_labels = us_system_context or set()
+    for rule in US_UNIVERSITY_SYSTEM_RULES:
+        if rule.label not in context_labels and not _mentions_university_system(value, rule):
+            continue
+        campus = _campus_from_clauses(clauses, rule.campus_aliases)
+        if campus:
+            return f"{rule.label}, {campus}"
     return ""
 
 
@@ -936,8 +1176,12 @@ def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
     seen: set[str] = set()
     labels: dict[str, str] = {}
     for match in matches:
-        for raw_affiliation in _author_record_affiliation_blocks(match.author):
-            names = _extract_institution_names(raw_affiliation)
+        affiliation_blocks = _author_record_affiliation_blocks(match.author)
+        us_system_context: set[str] = set()
+        for block in affiliation_blocks:
+            us_system_context.update(_mentioned_us_university_systems(block))
+        for raw_affiliation in affiliation_blocks:
+            names = _extract_institution_names(raw_affiliation, us_system_context=us_system_context)
             if not names:
                 names = [
                     _normalize_institution_label(part)

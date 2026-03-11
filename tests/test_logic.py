@@ -3,6 +3,7 @@ from typing import Literal
 
 from app.logic import (
     _affiliation_match_candidates,
+    _extract_institution_names,
     _extract_affiliation_record_signals,
     affiliation_fingerprint,
     analyze_citations,
@@ -186,7 +187,7 @@ def test_build_clusters_groups_by_affiliation_fingerprint() -> None:
 
 
 def test_build_clusters_unifies_distinct_and_combined_affiliation_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_extract_institution_names(affiliation: str) -> list[str]:
+    def fake_extract_institution_names(affiliation: str, *, us_system_context: set[str] | None = None) -> list[str]:
         names: list[str] = []
         if "brigham" in affiliation.lower():
             names.append("Brigham and Women's Hospital")
@@ -516,6 +517,37 @@ def test_cluster_affiliation_labels_infer_uc_davis_from_city_plus_system() -> No
 
     assert len(clusters) == 1
     assert "University of California, Davis" in clusters[0].affiliations
+
+
+def test_extract_institution_names_does_not_infer_uc_from_city_only() -> None:
+    assert _extract_institution_names(
+        "Department of Gastroenterology, Rady Children's Hospital San Diego, San Diego, CA, USA."
+    ) == []
+    assert _extract_institution_names("Sharp Memorial Hospital, San Diego, California, USA.") == []
+    assert _extract_institution_names("Biohub, San Francisco, San Francisco, CA, USA.") == []
+
+
+def test_extract_institution_names_infers_ucsb_when_uc_system_is_explicit() -> None:
+    assert _extract_institution_names(
+        "Neuroscience Research Institute, University of California, Santa Barbara, CA 93106."
+    ) == ["University of California, Santa Barbara"]
+
+
+def test_extract_institution_names_infers_other_us_university_system_campuses() -> None:
+    tx_names = _extract_institution_names(
+        "Department of Biology, University of Texas at Austin, Austin, TX, USA."
+    )
+    assert tx_names and "University of Texas" in tx_names[0] and "Austin" in tx_names[0]
+
+    nc_names = _extract_institution_names(
+        "Department of Medicine, University of North Carolina at Chapel Hill, Chapel Hill, NC, USA."
+    )
+    assert nc_names and "University of North Carolina" in nc_names[0] and "Chapel Hill" in nc_names[0]
+
+    co_names = _extract_institution_names(
+        "Department of Immunology, University of Colorado Anschutz Medical Campus, Aurora, CO, USA."
+    )
+    assert co_names and "University of Colorado" in co_names[0] and "Anschutz" in co_names[0]
 
 
 def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:

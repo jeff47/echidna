@@ -901,19 +901,11 @@ def _normalize_affiliation_text(value: str) -> str:
     cleaned = _clean_text(value)
     cleaned = cleaned.translate(SUPERSCRIPT_TRANSLATION)
     cleaned = _normalize_spaced_ror_urls(cleaned)
-    # Insert boundary between compact ROR ID and immediately concatenated text
-    # (e.g. ".../03zjqec80HSS" -> ".../03zjqec80 HSS").
+    # Insert boundary after the fixed-width 9-character ROR identifier when
+    # publisher/source text concatenates the next token without a delimiter
+    # (e.g. ".../03zjqec80HSS", ".../03vek6s52grid.38142.3c").
     cleaned = re.sub(
-        r"(https?://(?:www\.)?ror\.org/[0-9a-z]{9})(?=[A-Z])",
-        r"\1 ",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    # Some publisher feeds concatenate registry IDs without delimiters
-    # (e.g. ".../03vek6s52grid.38142.3c..."). Add a boundary so both
-    # identifiers remain parseable downstream.
-    cleaned = re.sub(
-        r"(https?://(?:www\.)?ror\.org/[0-9a-z]{9})(?=grid\s*\.)",
+        r"(https?://(?:www\.)?ror\.org/[0-9a-z]{9})(?=[^\W_])",
         r"\1 ",
         cleaned,
         flags=re.IGNORECASE,
