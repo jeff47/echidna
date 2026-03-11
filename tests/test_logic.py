@@ -550,6 +550,45 @@ def test_extract_institution_names_infers_other_us_university_system_campuses() 
     assert co_names and "University of Colorado" in co_names[0] and "Anschutz" in co_names[0]
 
 
+def test_extract_institution_names_infers_university_of_state_fallback() -> None:
+    mi_names = _extract_institution_names(
+        "Animal Phenotyping Core, University of Michigan, Ann Arbor, MI 48109, USA."
+    )
+    assert mi_names == ["University of Michigan"]
+
+    tn_names = _extract_institution_names(
+        "Advanced Microscopy and Imaging Center, College of Arts and Sciences, University of Tennessee, Knoxville, Tennessee, USA."
+    )
+    assert tn_names == ["University of Tennessee"]
+
+    la_names = _extract_institution_names(
+        "Department of Biology, University of Louisiana at Lafayette, Lafayette, Louisiana, USA."
+    )
+    assert la_names == ["University of Louisiana, Lafayette"]
+
+    al_names = _extract_institution_names(
+        "Alabama Life Research Institute, The University of Alabama, Tuscaloosa, Alabama, USA."
+    )
+    assert al_names == ["University of Alabama"]
+
+    md_med_names = _extract_institution_names(
+        "Center for Advanced Microbiome Research and Innovation, Institute for Genome Sciences, University of Maryland School of Medicine, Baltimore, MD, USA."
+    )
+    assert md_med_names == ["University of Maryland"]
+
+    ne_lincoln_names = _extract_institution_names(
+        "Department of Animal Science, University of Nebraska-Lincoln, 3940 Fair St, Lincoln, NE 68503, United States."
+    )
+    assert ne_lincoln_names == ["University of Nebraska, Lincoln"]
+
+    mo_umkc_names = _extract_institution_names(
+        "Department of Allergy and Immunology, Children's Mercy Kansas City, University of Missouri-Kansas City, Kansas City, MO, USA."
+    )
+    assert mo_umkc_names == ["University of Missouri, Kansas City"]
+
+    assert _extract_institution_names("University of North Carolina Project Malawi, Lilongwe, Malawi.") == []
+
+
 def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
     target = parse_target_name("Kevin O'Connor")
     citations = [

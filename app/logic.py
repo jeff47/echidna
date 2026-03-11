@@ -93,6 +93,88 @@ US_STATE_CODES = {
     "ky", "la", "ma", "md", "me", "mi", "mn", "mo", "ms", "mt", "nc", "nd", "ne", "nh", "nj", "nm", "nv",
     "ny", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "va", "vt", "wa", "wi", "wv", "wy",
 }
+US_STATE_NAMES = (
+    "Alabama",
+    "Alaska",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "Florida",
+    "Georgia",
+    "Hawaii",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming",
+)
+US_STATE_NAME_PATTERN = "|".join(sorted((re.escape(state) for state in US_STATE_NAMES), key=len, reverse=True))
+STATE_UNIVERSITY_RE = re.compile(rf"\b(?:the\s+)?un(?:i)?versity\s+of\s+(?P<state>{US_STATE_NAME_PATTERN})\b", flags=re.IGNORECASE)
+STATE_UNIVERSITY_AT_CAMPUS_RE = re.compile(
+    r"^\s+at\s+(?P<campus>[A-Za-z][A-Za-z .'\-]{1,80}?)(?=$|[,;|.])",
+    flags=re.IGNORECASE,
+)
+STATE_UNIVERSITY_HIGH_CONFIDENCE_SUFFIXES = (
+    "school of medicine",
+    "medical school",
+    "medical center",
+    "health center",
+    "health science center",
+    "health sciences center",
+    "health sciences",
+    "school of public health",
+    "college of medicine",
+    "school of pharmacy",
+    "college of pharmacy",
+    "school of dentistry",
+    "school of nursing",
+)
+STATE_UNIVERSITY_CAMPUS_SUFFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
+    "alabama": (("huntsville", "Huntsville"),),
+    "hawaii": (("manoa", "Manoa"),),
+    "louisiana": (("lafayette", "Lafayette"), ("monroe", "Monroe")),
+    "missouri": (("kansas city", "Kansas City"), ("st louis", "St. Louis")),
+    "nebraska": (("lincoln", "Lincoln"), ("omaha", "Omaha")),
+    "nevada": (("las vegas", "Las Vegas"), ("reno", "Reno")),
+    "tennessee": (("southern", "Southern"),),
+}
 GEO_TOKENS = {
     "country",
     "state",
@@ -713,6 +795,15 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
             return [_normalize_institution_label(result.canonical_name)]
         return [_normalize_institution_label(inferred_system_label)]
 
+    # Stage 1 fallback for explicit "University of {State}" patterns that are
+    # frequently absent from affiliation_normalizer aliases.
+    inferred_state_university = _infer_us_state_university_label(raw_affiliation)
+    if inferred_state_university:
+        result = match_affiliation(inferred_state_university)
+        if result.status == "matched" and result.canonical_name:
+            return [_normalize_institution_label(result.canonical_name)]
+        return [_normalize_institution_label(inferred_state_university)]
+
     return []
 
 
@@ -983,6 +1074,58 @@ def _infer_us_university_system_label(value: str, *, us_system_context: set[str]
         campus = _campus_from_clauses(clauses, rule.campus_aliases)
         if campus:
             return f"{rule.label}, {campus}"
+    return ""
+
+
+def _title_case_words(value: str) -> str:
+    return " ".join(part.capitalize() for part in value.split())
+
+
+def _infer_us_state_university_label(value: str) -> str:
+    match = STATE_UNIVERSITY_RE.search(value)
+    if match is None:
+        return ""
+
+    state = _title_case_words(match.group("state"))
+    after_state = value[match.end() :]
+
+    campus_match = STATE_UNIVERSITY_AT_CAMPUS_RE.match(after_state)
+    if campus_match is not None:
+        campus = _normalize_institution_label(campus_match.group("campus") or "")
+        if campus:
+            return f"University of {state}, {campus}"
+
+    suffix_segment = _state_university_suffix_segment(after_state)
+    if not suffix_segment:
+        return f"University of {state}"
+
+    if any(suffix_segment.startswith(prefix) for prefix in STATE_UNIVERSITY_HIGH_CONFIDENCE_SUFFIXES):
+        return f"University of {state}"
+
+    campus = _state_university_campus_from_suffix(state.lower(), suffix_segment)
+    if campus:
+        return f"University of {state}, {campus}"
+
+    # Keep precision-first behavior: do not infer for ambiguous suffixes
+    # such as "Project Malawi" or broad partner-program phrases.
+    return ""
+
+
+def _state_university_suffix_segment(after_state: str) -> str:
+    prefix = re.split(r"[,;|.]", after_state, maxsplit=1)[0]
+    normalized = normalize_text(_normalize_institution_label(prefix))
+    if normalized.startswith("-"):
+        normalized = normalized[1:].strip()
+    if normalized.startswith("in "):
+        normalized = normalized[3:].strip()
+    return normalized
+
+
+def _state_university_campus_from_suffix(state_key: str, suffix_segment: str) -> str:
+    aliases = STATE_UNIVERSITY_CAMPUS_SUFFIX_ALIASES.get(state_key, ())
+    for alias, campus in aliases:
+        if _phrase_in_text(alias, suffix_segment):
+            return campus
     return ""
 
 
