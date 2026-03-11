@@ -38,6 +38,7 @@ APOSTROPHE_VARIANTS = re.compile(r"[’`´]")
 AFFILIATION_PIECE_SPLIT = re.compile(r"[;|]+")
 AFFILIATION_AND_SPLIT = re.compile(r"\band\b", flags=re.IGNORECASE)
 AFFILIATION_AND_DELIMITER_SPLIT = re.compile(r"\band\b(?!\s+[A-Za-z]+'s\b)", flags=re.IGNORECASE)
+AFFILIATION_NARRATIVE_WITH_RE = re.compile(r"\b(?:is|are)\s+(?:also\s+)?with\b", flags=re.IGNORECASE)
 INSTITUTION_HINTS = (
     "university",
     "hospital",
@@ -773,6 +774,8 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
     raw_affiliation = affiliation.strip()
     if not raw_affiliation:
         return []
+    if _is_ambiguous_multi_assignment_narrative(raw_affiliation):
+        return []
 
     ror_ids, grid_ids, emails = _extract_affiliation_record_signals(raw_affiliation)
     preferred_ror = ror_ids[0] if len(ror_ids) == 1 else ""
@@ -1016,6 +1019,16 @@ def _is_match_worthy_affiliation_candidate(value: str) -> bool:
     if len(tokens) == 1:
         return tokens[0] in SHORT_DISTINCTIVE_TOKENS
     return True
+
+
+def _is_ambiguous_multi_assignment_narrative(value: str) -> bool:
+    # PubMed occasionally emits full author-note prose ("X is with ... Y is with ...")
+    # that can mention multiple institutions in one block. Treat these as ambiguous
+    # so we do not force a single institution label.
+    if len(AFFILIATION_NARRATIVE_WITH_RE.findall(value)) < 2:
+        return False
+    punctuation_breaks = len(re.findall(r"[.;]", value))
+    return punctuation_breaks >= 2
 
 
 def _looks_like_geo_only_phrase(normalized: str) -> bool:

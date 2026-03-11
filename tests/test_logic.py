@@ -612,6 +612,25 @@ def test_extract_institution_names_literal_fallback_captures_selected_institutio
     assert _extract_institution_names("University of North Carolina Project Malawi, Lilongwe, Malawi.") == []
 
 
+def test_extract_institution_names_rejects_multi_assignment_narrative_blocks() -> None:
+    narrative = (
+        "Adam M. Whalen, Alexander Furuya, Jessica Contreras, Asa Radix, and Dustin T. Duncan are with the "
+        "Department of Epidemiology, Mailman School of Public Health, Columbia University, New York, NY. "
+        "Asa Radix is also with the Callen-Lorde Community Health Center, New York, NY. "
+        "John A. Schneider is with the Department of Public Health Sciences, University of Chicago, Chicago, IL. "
+        "Sahnah Lim and Chau Trinh-Shevrin are with the Department of Population Health, Grossman School of "
+        "Medicine, New York University, New York, NY, and the Callen-Lorde Community Health Center, New York, NY."
+    )
+    assert _extract_institution_names(narrative) == []
+
+
+def test_extract_institution_names_allows_single_assignment_narrative_line() -> None:
+    single_assignment = (
+        "John A. Schneider is with the Department of Public Health Sciences, University of Chicago, Chicago, IL."
+    )
+    assert _extract_institution_names(single_assignment) == ["University of Chicago"]
+
+
 def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
     target = parse_target_name("Kevin O'Connor")
     citations = [
