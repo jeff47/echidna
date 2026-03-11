@@ -175,6 +175,52 @@ STATE_UNIVERSITY_CAMPUS_SUFFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] =
     "nevada": (("las vegas", "Las Vegas"), ("reno", "Reno")),
     "tennessee": (("southern", "Southern"),),
 }
+LITERAL_INSTITUTION_ALLOWLIST = (
+    "Alabama State University",
+    "Albany College of Pharmacy and Health Sciences",
+    "Albany Medical Center",
+    "Arkansas Children's Research Institute",
+    "Augusta University School of Medicine",
+    "Florida Atlantic University",
+)
+LITERAL_INSTITUTION_SUFFIXES = (
+    "College of Pharmacy and Health Sciences",
+    "University School of Medicine",
+    "State University",
+    "Research Institute",
+    "Medical Center",
+    "College",
+    "University",
+)
+LITERAL_INSTITUTION_RE = re.compile(
+    rf"(?<![A-Za-z0-9])(?P<label>(?:The\s+)?[A-Z][A-Za-z0-9'’&()./\-]*"
+    rf"(?:\s+[A-Z][A-Za-z0-9'’&()./\-]*){{0,12}}\s+"
+    rf"(?:{'|'.join(re.escape(suffix) for suffix in LITERAL_INSTITUTION_SUFFIXES)}))"
+    rf"(?=$|[,;|.])"
+)
+LITERAL_UNIVERSITY_OF_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?P<label>(?:The\s+)?University\s+of\s+[A-Z][A-Za-z0-9'’&()./\-]*"
+    r"(?:\s+[A-Z][A-Za-z0-9'’&()./\-]*){0,8})"
+    r"(?=$|[,;|.])"
+)
+LITERAL_INSTITUTION_BLOCKED_CONTEXT_PREFIXES = (
+    "project",
+    "projects",
+    "global project",
+    "global projects",
+)
+LITERAL_INSTITUTION_BLOCKED_LABEL_TOKENS = {
+    "project",
+    "projects",
+    "program",
+    "programs",
+    "network",
+    "networks",
+    "consortium",
+    "consortia",
+    "initiative",
+    "initiatives",
+}
 GEO_TOKENS = {
     "country",
     "state",
@@ -804,6 +850,10 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
             return [_normalize_institution_label(result.canonical_name)]
         return [_normalize_institution_label(inferred_state_university)]
 
+    literal_names = _infer_literal_institution_labels(raw_affiliation)
+    if literal_names:
+        return literal_names
+
     return []
 
 
@@ -1127,6 +1177,71 @@ def _state_university_campus_from_suffix(state_key: str, suffix_segment: str) ->
         if _phrase_in_text(alias, suffix_segment):
             return campus
     return ""
+
+
+def _infer_literal_institution_labels(value: str) -> list[str]:
+    normalized_value = normalize_text(_normalize_institution_label(value))
+    labels: list[str] = []
+    seen: set[str] = set()
+
+    def add(label: str) -> None:
+        normalized = _normalize_literal_institution_label(label)
+        if not _is_literal_institution_candidate(normalized):
+            return
+        key = _institution_key(normalized) or normalize_token(normalized)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        labels.append(normalized)
+
+    # Always accept explicit allowlist phrases when present as contiguous text.
+    for label in LITERAL_INSTITUTION_ALLOWLIST:
+        if _phrase_in_text(normalize_text(label), normalized_value):
+            add(label)
+
+    for match in LITERAL_INSTITUTION_RE.finditer(value):
+        candidate = match.group("label")
+        if _literal_context_blocked(value[match.end() :]):
+            continue
+        add(candidate)
+    for match in LITERAL_UNIVERSITY_OF_RE.finditer(value):
+        candidate = match.group("label")
+        if _literal_context_blocked(value[match.end() :]):
+            continue
+        add(candidate)
+
+    return labels
+
+
+def _normalize_literal_institution_label(value: str) -> str:
+    normalized = _normalize_institution_label(value)
+    normalized = re.sub(r"^(?i:the)\s+", "", normalized).strip()
+    return normalized
+
+
+def _is_literal_institution_candidate(value: str) -> bool:
+    normalized = normalize_text(value)
+    if not normalized:
+        return False
+    tokens = set(re.findall(r"[a-z0-9]+", normalized))
+    if tokens & LITERAL_INSTITUTION_BLOCKED_LABEL_TOKENS:
+        return False
+    if UNIT_PREFIX_PATTERN.match(normalized):
+        return False
+    if _looks_like_geo_only_phrase(normalized):
+        return False
+    if not any(marker in normalized for marker in INSTITUTION_MARKER_WORDS):
+        return False
+    if normalized in {"university", "college", "state university", "medical center", "research institute"}:
+        return False
+    return True
+
+
+def _literal_context_blocked(tail: str) -> bool:
+    normalized_tail = normalize_text(_normalize_institution_label(tail))
+    if not normalized_tail:
+        return False
+    return any(normalized_tail.startswith(prefix) for prefix in LITERAL_INSTITUTION_BLOCKED_CONTEXT_PREFIXES)
 
 
 def _institution_key(value: str) -> str:

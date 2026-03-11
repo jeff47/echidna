@@ -589,6 +589,29 @@ def test_extract_institution_names_infers_university_of_state_fallback() -> None
     assert _extract_institution_names("University of North Carolina Project Malawi, Lilongwe, Malawi.") == []
 
 
+def test_extract_institution_names_literal_fallback_captures_selected_institutions() -> None:
+    assert _extract_institution_names("Florida Atlantic University, Boca Raton, FL, USA.") == ["Florida Atlantic University"]
+    assert _extract_institution_names("Alabama State University, Montgomery, AL, USA.") == ["Alabama State University"]
+    assert _extract_institution_names(
+        "Albany College of Pharmacy and Health Sciences, Albany, NY, USA."
+    ) == ["Albany College of Pharmacy and Health Sciences"]
+    assert _extract_institution_names("Albany Medical Center, Albany, NY, USA.") == ["Albany Medical Center"]
+    assert _extract_institution_names(
+        "Arkansas Children's Research Institute, Little Rock, AR, USA."
+    ) == ["Arkansas Children's Research Institute"]
+    assert _extract_institution_names(
+        "Augusta University School of Medicine, Augusta, GA, USA."
+    ) == ["Augusta University School of Medicine"]
+    assert _extract_institution_names("Harvey Mudd College, Claremont, CA, USA.") == ["Harvey Mudd College"]
+    assert _extract_institution_names("University of Houston, Houston, TX, USA.") == ["University of Houston"]
+
+    # Canonical normalizer matches still take precedence over literal fallback.
+    assert _extract_institution_names("Arizona State University, Tempe, AZ, USA.") == ["Arizona State University-Tempe"]
+
+    # Keep precision-first behavior for project site strings.
+    assert _extract_institution_names("University of North Carolina Project Malawi, Lilongwe, Malawi.") == []
+
+
 def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
     target = parse_target_name("Kevin O'Connor")
     citations = [
