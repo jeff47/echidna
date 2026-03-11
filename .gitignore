@@ -64,3 +64,6 @@ pubmed-NIAIDgr-set.txt
 sagept-ad-ror-email-audit.tsv
 sagept-affiliation-normalizer-ad-strings.tsv
 sagept-affiliation-normalizer-inputs.tsv
+pubmed-NIAIDgr-affiliations-heuristics-normalizer-review-us-only.csv
+pubmed-NIAIDgr-affiliations-heuristics-normalizer-review.csv
+pubmed-NIAIDgr-affiliations.txt
