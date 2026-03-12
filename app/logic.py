@@ -1055,7 +1055,7 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
     ror_ids, grid_ids, emails = _extract_affiliation_record_signals(raw_affiliation)
     preferred_ror = ror_ids[0] if len(ror_ids) == 1 else ""
     preferred_grid = grid_ids[0] if len(grid_ids) == 1 else ""
-    preferred_email = ";".join(emails) if emails else ""
+    preferred_email = emails[0] if len(emails) == 1 else ""
 
     id_names: list[str] = []
     email_names: list[str] = []
