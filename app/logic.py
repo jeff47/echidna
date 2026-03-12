@@ -146,6 +146,7 @@ US_STATE_NAMES = (
     "Wisconsin",
     "Wyoming",
 )
+US_STATE_NAME_KEYS = {state.lower() for state in US_STATE_NAMES}
 US_STATE_NAME_PATTERN = "|".join(sorted((re.escape(state) for state in US_STATE_NAMES), key=len, reverse=True))
 STATE_UNIVERSITY_RE = re.compile(rf"\b(?:the\s+)?un(?:i)?versity\s+of\s+(?P<state>{US_STATE_NAME_PATTERN})\b", flags=re.IGNORECASE)
 STATE_UNIVERSITY_AT_CAMPUS_RE = re.compile(
@@ -193,11 +194,22 @@ LITERAL_INSTITUTION_SUFFIXES = (
     "College of Pharmacy and Health Sciences",
     "University School of Medicine",
     "School of Public Health",
+    "Incorporated",
+    "Corporation",
     "State University",
     "Research Institute",
     "Medical Center",
     "College",
     "University",
+    "Ltd",
+    "LLC",
+    "Inc",
+    "Corp",
+    "GmbH",
+    "PLC",
+    "BV",
+    "AG",
+    "SA",
 )
 LITERAL_INSTITUTION_RE = re.compile(
     rf"(?<![A-Za-z0-9])(?P<label>(?:The\s+)?[A-Z][A-Za-z0-9'’&()./\-]*"
@@ -241,6 +253,171 @@ GEO_TOKENS = {
     "massachusetts",
     "boston",
 }
+NON_US_COUNTRY_CANONICAL = (
+    "Afghanistan",
+    "Albania",
+    "Algeria",
+    "Andorra",
+    "Angola",
+    "Argentina",
+    "Armenia",
+    "Australia",
+    "Austria",
+    "Azerbaijan",
+    "Bahrain",
+    "Bangladesh",
+    "Belarus",
+    "Belgium",
+    "Belize",
+    "Benin",
+    "Bhutan",
+    "Bolivia",
+    "Bosnia and Herzegovina",
+    "Botswana",
+    "Brazil",
+    "Brunei",
+    "Bulgaria",
+    "Burkina Faso",
+    "Burundi",
+    "Cambodia",
+    "Cameroon",
+    "Canada",
+    "Cape Verde",
+    "Central African Republic",
+    "Chad",
+    "Chile",
+    "China",
+    "Colombia",
+    "Comoros",
+    "Congo",
+    "Costa Rica",
+    "Croatia",
+    "Cuba",
+    "Cyprus",
+    "Czech Republic",
+    "Czechia",
+    "Denmark",
+    "Djibouti",
+    "Dominica",
+    "Dominican Republic",
+    "Ecuador",
+    "Egypt",
+    "El Salvador",
+    "Equatorial Guinea",
+    "Eritrea",
+    "Estonia",
+    "Eswatini",
+    "Ethiopia",
+    "Fiji",
+    "Finland",
+    "France",
+    "Gabon",
+    "Gambia",
+    "Georgia",
+    "Germany",
+    "Ghana",
+    "Greece",
+    "Guatemala",
+    "Guinea",
+    "Guinea-Bissau",
+    "Guyana",
+    "Haiti",
+    "Honduras",
+    "Hungary",
+    "Iceland",
+    "India",
+    "Indonesia",
+    "Iran",
+    "Iraq",
+    "Ireland",
+    "Israel",
+    "Italy",
+    "Jamaica",
+    "Japan",
+    "Jordan",
+    "Kazakhstan",
+    "Kenya",
+    "Kuwait",
+    "Kyrgyzstan",
+    "Laos",
+    "Latvia",
+    "Lebanon",
+    "Lesotho",
+    "Liberia",
+    "Libya",
+    "Lithuania",
+    "Luxembourg",
+    "Madagascar",
+    "Malawi",
+    "Malaysia",
+    "Mali",
+    "Malta",
+    "Mauritania",
+    "Mauritius",
+    "Mexico",
+    "Moldova",
+    "Monaco",
+    "Mongolia",
+    "Montenegro",
+    "Morocco",
+    "Mozambique",
+    "Myanmar",
+    "Namibia",
+    "Nepal",
+    "Netherlands",
+    "New Zealand",
+    "Nicaragua",
+    "Niger",
+    "Nigeria",
+    "North Macedonia",
+    "Norway",
+    "Oman",
+    "Pakistan",
+    "Panama",
+    "Papua New Guinea",
+    "Paraguay",
+    "Peru",
+    "Philippines",
+    "Poland",
+    "Portugal",
+    "Qatar",
+    "Romania",
+    "Russia",
+    "Rwanda",
+    "Saudi Arabia",
+    "Senegal",
+    "Serbia",
+    "Sierra Leone",
+    "Singapore",
+    "Slovakia",
+    "Slovenia",
+    "Somalia",
+    "South Africa",
+    "South Korea",
+    "South Sudan",
+    "Spain",
+    "Sri Lanka",
+    "Sudan",
+    "Sweden",
+    "Switzerland",
+    "Syria",
+    "Taiwan",
+    "Tanzania",
+    "Thailand",
+    "Tunisia",
+    "Turkey",
+    "Uganda",
+    "Ukraine",
+    "United Arab Emirates",
+    "United Kingdom",
+    "Uruguay",
+    "Uzbekistan",
+    "Venezuela",
+    "Vietnam",
+    "Yemen",
+    "Zambia",
+    "Zimbabwe",
+)
 POSTAL_CODE_TOKEN = re.compile(r"^\d{5}(?:-\d{4})?$")
 AFFILIATION_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 AFFILIATION_ROR_URL_RE = re.compile(r"https?://(?:www\.)?ror\.org/[0-9a-z]{9}", flags=re.IGNORECASE)
@@ -516,6 +693,51 @@ def normalize_text(value: str) -> str:
     return " ".join(value.lower().split())
 
 
+def _country_key(value: str) -> str:
+    lowered = normalize_text(value)
+    lowered = re.sub(r"[.]", "", lowered)
+    lowered = re.sub(r"^the\s+", "", lowered)
+    return lowered.strip()
+
+
+US_COUNTRY_KEYS = {
+    "us",
+    "usa",
+    "u s",
+    "u s a",
+    "united states",
+    "united states of america",
+    "america",
+}
+
+
+NON_US_COUNTRY_ALIAS_TO_CANONICAL: dict[str, str] = {
+    _country_key(name): name for name in NON_US_COUNTRY_CANONICAL
+}
+NON_US_COUNTRY_ALIAS_TO_CANONICAL.update(
+    {
+        "uk": "United Kingdom",
+        "u k": "United Kingdom",
+        "great britain": "United Kingdom",
+        "england": "United Kingdom",
+        "scotland": "United Kingdom",
+        "wales": "United Kingdom",
+        "northern ireland": "United Kingdom",
+        "uae": "United Arab Emirates",
+        "u a e": "United Arab Emirates",
+        "russian federation": "Russia",
+        "republic of korea": "South Korea",
+        "korea republic of": "South Korea",
+        "viet nam": "Vietnam",
+        "turkiye": "Turkey",
+        "cote d'ivoire": "Cote d'Ivoire",
+        "cote divoire": "Cote d'Ivoire",
+        "ivory coast": "Cote d'Ivoire",
+        "cabo verde": "Cape Verde",
+    }
+)
+
+
 def extract_initials(given: str) -> str:
     parts = [p for p in re.split(r"[^A-Za-z]+", given) if p]
     return "".join(p[0].lower() for p in parts)
@@ -776,6 +998,53 @@ def _author_record_affiliation_blocks(author: Author) -> list[str]:
     )
 
 
+def _extract_trailing_non_us_country_label(affiliation: str) -> str:
+    # Country appears at the end of many affiliation strings.
+    clauses = [
+        _normalize_institution_label(part)
+        for part in re.split(r"[,;|]+", affiliation)
+        if _normalize_institution_label(part)
+    ]
+    if not clauses:
+        return ""
+    last = clauses[-1]
+    key = _country_key(last)
+    if not key:
+        return ""
+    if key in US_COUNTRY_KEYS:
+        return ""
+    if key in US_STATE_NAME_KEYS:
+        return ""
+    if key in US_STATE_CODES:
+        return ""
+    if re.search(r"\d", key):
+        return ""
+    return NON_US_COUNTRY_ALIAS_TO_CANONICAL.get(key, "")
+
+
+def _append_non_us_country_suffix(names: list[str], affiliation: str) -> list[str]:
+    country = _extract_trailing_non_us_country_label(affiliation)
+    if not country:
+        return names
+    out: list[str] = []
+    seen: set[str] = set()
+    country_key = _country_key(country)
+    for name in names:
+        normalized_name = _normalize_institution_label(name)
+        if not normalized_name:
+            continue
+        if _country_key(normalized_name).endswith(country_key):
+            label = normalized_name
+        else:
+            label = f"{normalized_name}, {country}"
+        dedupe_key = _institution_key(label) or normalize_token(label)
+        if not dedupe_key or dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        out.append(label)
+    return out
+
+
 def _extract_institution_names(affiliation: str, *, us_system_context: set[str] | None = None) -> list[str]:
     raw_affiliation = affiliation.strip()
     if not raw_affiliation:
@@ -814,13 +1083,13 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
             if result.status == "matched":
                 break
     if id_names:
-        return id_names
+        return _append_non_us_country_suffix(id_names, raw_affiliation)
 
     for email in emails:
         result = match_record(email=email, affiliation_text=raw_affiliation)
         add_match(email_names, result.status, result.canonical_name)
     if email_names:
-        return email_names
+        return _append_non_us_country_suffix(email_names, raw_affiliation)
 
     for candidate in _affiliation_match_candidates(raw_affiliation):
         if preferred_ror or preferred_grid or preferred_email:
@@ -853,8 +1122,8 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
                 seen_adjusted.add(key)
                 adjusted.append(replacement)
             if replaced and adjusted:
-                return adjusted
-        return text_names
+                return _append_non_us_country_suffix(adjusted, raw_affiliation)
+        return _append_non_us_country_suffix(text_names, raw_affiliation)
 
     # Support US university-system strings where campus is present elsewhere
     # in the AD line, including split blocks like:
@@ -866,8 +1135,8 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
     if inferred_system_label:
         result = match_affiliation(inferred_system_label)
         if result.status == "matched" and result.canonical_name:
-            return [_normalize_institution_label(result.canonical_name)]
-        return [_normalize_institution_label(inferred_system_label)]
+            return _append_non_us_country_suffix([_normalize_institution_label(result.canonical_name)], raw_affiliation)
+        return _append_non_us_country_suffix([_normalize_institution_label(inferred_system_label)], raw_affiliation)
 
     # Stage 1 fallback for explicit "University of {State}" patterns that are
     # frequently absent from affiliation_normalizer aliases.
@@ -875,12 +1144,12 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
     if inferred_state_university:
         result = match_affiliation(inferred_state_university)
         if result.status == "matched" and result.canonical_name:
-            return [_normalize_institution_label(result.canonical_name)]
-        return [_normalize_institution_label(inferred_state_university)]
+            return _append_non_us_country_suffix([_normalize_institution_label(result.canonical_name)], raw_affiliation)
+        return _append_non_us_country_suffix([_normalize_institution_label(inferred_state_university)], raw_affiliation)
 
     literal_names = _infer_literal_institution_labels(raw_affiliation)
     if literal_names:
-        return literal_names
+        return _append_non_us_country_suffix(literal_names, raw_affiliation)
 
     return []
 
@@ -1295,7 +1564,11 @@ def _is_literal_institution_candidate(value: str) -> bool:
         return False
     if _looks_like_geo_only_phrase(normalized):
         return False
-    if not any(marker in normalized for marker in INSTITUTION_MARKER_WORDS):
+    has_institution_marker = any(marker in normalized for marker in INSTITUTION_MARKER_WORDS)
+    has_org_suffix = bool(tokens & ORG_SUFFIX_WORDS)
+    if not has_institution_marker and not has_org_suffix:
+        return False
+    if has_org_suffix and all(token in ORG_SUFFIX_WORDS for token in tokens):
         return False
     if normalized in {
         "university",
@@ -1517,13 +1790,6 @@ def _cluster_affiliation_labels(matches: list[AuthorMatch]) -> list[str]:
             us_system_context.update(_mentioned_us_university_systems(block))
         for raw_affiliation in affiliation_blocks:
             names = _extract_institution_names(raw_affiliation, us_system_context=us_system_context)
-            if not names:
-                names = [
-                    _normalize_institution_label(part)
-                    for part in AFFILIATION_PIECE_SPLIT.split(raw_affiliation)
-                    if _normalize_institution_label(part)
-                    and normalize_text(_normalize_institution_label(part)) not in CONJUNCTION_ONLY_FRAGMENTS
-                ]
             for name in names:
                 key = _institution_key(name)
                 if not key:

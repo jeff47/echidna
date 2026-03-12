@@ -661,7 +661,7 @@ def test_extract_institution_names_allows_single_assignment_narrative_line() -> 
     assert _extract_institution_names(single_assignment) == ["University of Chicago"]
 
 
-def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
+def test_cluster_affiliation_labels_keep_company_name_without_city_state() -> None:
     target = parse_target_name("Kevin O'Connor")
     citations = [
         _citation(
@@ -694,8 +694,85 @@ def test_cluster_affiliation_labels_fall_back_to_raw_affiliation_text() -> None:
     clusters, _ = build_clusters(citations, target)
 
     labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
-    assert "Bioplastech Ltd., Dublin, Ireland" in labels
+    assert "Bioplastech Ltd, Ireland" in labels
+    assert "Dublin" not in labels
     assert "Yale University" in labels
+
+
+def test_cluster_affiliation_labels_ignore_location_only_and_contribution_note_text() -> None:
+    target = parse_target_name("Peter Sage")
+    citations = [
+        _citation(
+            "501",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter",
+                    "P",
+                    "These authors contributed equally",
+                )
+            ],
+        ),
+        _citation(
+            "502",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter",
+                    "P",
+                    "Boston, MA, USA",
+                )
+            ],
+        ),
+        _citation(
+            "503",
+            2025,
+            [
+                _author(
+                    1,
+                    "Sage",
+                    "Peter",
+                    "P",
+                    "Transplantation Research Center, Division of Renal Medicine, Department of Medicine",
+                )
+            ],
+        ),
+    ]
+    clusters, _ = build_clusters(citations, target)
+
+    assert len(clusters) == 3
+    assert all(cluster.affiliations == ["(no affiliation listed)"] for cluster in clusters)
+
+
+def test_extract_institution_names_ignores_contribution_note_but_keeps_institution() -> None:
+    names = _extract_institution_names(
+        "These authors contributed equally. Brigham and Women's Hospital, Boston, MA, USA."
+    )
+    assert names == ["Brigham and Women's Hospital"]
+
+
+def test_extract_institution_names_appends_non_us_trailing_country() -> None:
+    india = _extract_institution_names(
+        "12. Department of Pulmonary Medicine, Christian Medical College, Vellore, Tamil Nadu, India."
+    )
+    assert india == ["Christian Medical College, India"]
+
+    greece = _extract_institution_names(
+        "2nd Department of Internal Medicine, HIV Unit, Medical School, Hippokration General Hospital, "
+        "National and Kapodistrian University of Athens, Athens, Greece."
+    )
+    assert greece == ["University of Athens, Greece"]
+
+    south_africa = _extract_institution_names(
+        "6. DSI-NRF Centre of Excellence for Biomedical Tuberculosis Research, South African Medical Research Council "
+        "Centre for Tuberculosis Research, Division of Molecular Biology and Human Genetics, Faculty of Medicine and "
+        "Health Sciences, Stellenbosch University, South Africa."
+    )
+    assert south_africa == ["Stellenbosch University, South Africa"]
 
 
 def test_match_author_does_not_fallback_to_initials_for_given_name_mismatch() -> None:
