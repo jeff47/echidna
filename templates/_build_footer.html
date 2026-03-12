@@ -1,0 +1,4 @@
+{% set info = build_info if build_info is defined else {} %}
+<footer style="margin-top: 1rem; text-align: center; font-size: 0.74rem; color: #64748b;">
+  Built {{ info.get("build_datetime", "unknown") }} | ECHIDNA {{ info.get("app_label", "unknown") }} | Normalizer {{ info.get("normalizer_label", "unknown") }}
+</footer>

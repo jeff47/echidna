@@ -30,6 +30,17 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000`.
 
+## Build metadata in footer
+
+Set build-time values when creating the Docker image so the footer shows a fixed build timestamp and app commit:
+
+```bash
+ECHIDNA_BUILD_DATETIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+ECHIDNA_APP_COMMIT="$(git rev-parse HEAD)" \
+docker compose build
+docker compose up -d
+```
+
 ## Runtime Logging
 
 - Set `ECHIDNA_LOG_LEVEL` in the service environment to `DEBUG` when troubleshooting metadata extraction.

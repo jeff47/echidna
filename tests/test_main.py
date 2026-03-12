@@ -11,6 +11,7 @@ from app.main import app as fastapi_app
 from app.main import (
     RunState,
     _apply_uncertain_selection_and_corrections,
+    _build_footer_metadata,
     _build_cluster_affiliation_display_rows,
     _build_citation_selection_rows,
     _build_cluster_citation_rows,
@@ -21,6 +22,7 @@ from app.main import (
     _deserialize_author,
     _serialize_author,
     _selected_default_excluded_type_terms,
+    _version_label,
     _with_row_render_fields,
     _xlsx_download_filename,
 )
@@ -462,6 +464,33 @@ def test_selected_default_excluded_type_terms_preserves_default_order_and_filter
     selected = _selected_default_excluded_type_terms(["COMMENT", "letter", "unknown"], options)
 
     assert selected == ["comment", "letter"]
+
+
+def test_version_label_shortens_commit_and_handles_missing_values() -> None:
+    assert _version_label("0.1.0", "1234567890abcdef") == "0.1.0 (1234567890ab)"
+    assert _version_label("0.1.0", None) == "0.1.0 (unknown)"
+    assert _version_label(None, None) == "unknown (unknown)"
+
+
+def test_build_footer_metadata_uses_env_override_and_dependency_commits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_BUILD_DATETIME", "2026-03-12 14:25:00 UTC")
+    monkeypatch.setattr(
+        main_module,
+        "_distribution_version",
+        lambda name: "1.2.3" if name == "echidna" else "0.9.1",
+    )
+    monkeypatch.setattr(main_module, "_git_commit", lambda _repo_root: "abcdef0123456789abcdef")
+    monkeypatch.setattr(main_module, "_distribution_vcs_commit", lambda _name: "fedcba9876543210fedcba")
+
+    metadata = _build_footer_metadata()
+
+    assert metadata == {
+        "build_datetime": "2026-03-12 14:25:00 UTC",
+        "app_label": "1.2.3 (abcdef012345)",
+        "normalizer_label": "0.9.1 (fedcba987654)",
+    }
 
 
 def test_build_out_of_window_rows_preserves_user_source_badge() -> None:

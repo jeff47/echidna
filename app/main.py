@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import html
+import importlib.metadata as importlib_metadata
 import io
 import json
 import logging
 import os
 import re
+import subprocess
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -86,6 +88,77 @@ CITATION_SOURCE_BADGE_META: dict[str, dict[str, str]] = {
         "title": "Citation added from LitSense",
     },
 }
+
+
+def _short_commit(commit: str | None, *, length: int = 12) -> str | None:
+    if not commit:
+        return None
+    return commit[:length]
+
+
+def _distribution_version(dist_name: str) -> str | None:
+    try:
+        return importlib_metadata.version(dist_name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+
+def _distribution_vcs_commit(dist_name: str) -> str | None:
+    try:
+        dist = importlib_metadata.distribution(dist_name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+    direct_url = dist.read_text("direct_url.json")
+    if not direct_url:
+        return None
+    try:
+        payload = json.loads(direct_url)
+    except json.JSONDecodeError:
+        return None
+    vcs_info = payload.get("vcs_info")
+    if not isinstance(vcs_info, dict):
+        return None
+    commit = vcs_info.get("commit_id")
+    if not isinstance(commit, str) or not commit:
+        return None
+    return commit
+
+
+def _git_commit(repo_root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    commit = result.stdout.strip()
+    return commit or None
+
+
+def _version_label(version: str | None, commit: str | None) -> str:
+    return f"{version or 'unknown'} ({_short_commit(commit) or 'unknown'})"
+
+
+def _build_footer_metadata() -> dict[str, str]:
+    build_datetime = os.getenv("ECHIDNA_BUILD_DATETIME", "").strip()
+    if not build_datetime:
+        build_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    app_version = _distribution_version("echidna")
+    app_commit = os.getenv("ECHIDNA_APP_COMMIT", "").strip() or _git_commit(PROJECT_ROOT)
+    normalizer_version = _distribution_version("affiliation_normalizer")
+    normalizer_commit = _distribution_vcs_commit("affiliation_normalizer")
+    return {
+        "build_datetime": build_datetime,
+        "app_label": _version_label(app_version, app_commit),
+        "normalizer_label": _version_label(normalizer_version, normalizer_commit),
+    }
+
+
+templates.env.globals["build_info"] = _build_footer_metadata()
 
 
 def _to_author_list(citation: Citation) -> str:

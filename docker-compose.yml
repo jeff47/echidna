@@ -1,6 +1,10 @@
 services:
   echidna:
-    build: .
+    build:
+      context: .
+      args:
+        ECHIDNA_BUILD_DATETIME: ${ECHIDNA_BUILD_DATETIME:-unknown}
+        ECHIDNA_APP_COMMIT: ${ECHIDNA_APP_COMMIT:-unknown}
     container_name: echidna
     restart: unless-stopped
     env_file:
