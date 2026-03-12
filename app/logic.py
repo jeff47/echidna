@@ -167,6 +167,11 @@ STATE_UNIVERSITY_HIGH_CONFIDENCE_SUFFIXES = (
     "school of dentistry",
     "school of nursing",
 )
+STATE_UNIVERSITY_RETAINED_SUFFIX_LABELS: dict[str, str] = {
+    "medical center": "Medical Center",
+    "medical school": "Medical School",
+    "school of medicine": "School of Medicine",
+}
 STATE_UNIVERSITY_CAMPUS_SUFFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "alabama": (("huntsville", "Huntsville"),),
     "hawaii": (("manoa", "Manoa"),),
@@ -187,6 +192,7 @@ LITERAL_INSTITUTION_ALLOWLIST = (
 LITERAL_INSTITUTION_SUFFIXES = (
     "College of Pharmacy and Health Sciences",
     "University School of Medicine",
+    "School of Public Health",
     "State University",
     "Research Institute",
     "Medical Center",
@@ -197,12 +203,12 @@ LITERAL_INSTITUTION_RE = re.compile(
     rf"(?<![A-Za-z0-9])(?P<label>(?:The\s+)?[A-Z][A-Za-z0-9'’&()./\-]*"
     rf"(?:\s+[A-Z][A-Za-z0-9'’&()./\-]*){{0,12}}\s+"
     rf"(?:{'|'.join(re.escape(suffix) for suffix in LITERAL_INSTITUTION_SUFFIXES)}))"
-    rf"(?=$|[,;|.])"
+    rf"(?=\s*(?:$|[,;|.]))"
 )
 LITERAL_UNIVERSITY_OF_RE = re.compile(
     r"(?<![A-Za-z0-9])(?P<label>(?:The\s+)?University\s+of\s+[A-Z][A-Za-z0-9'’&()./\-]*"
     r"(?:\s+[A-Z][A-Za-z0-9'’&()./\-]*){0,8})"
-    r"(?=$|[,;|.])"
+    r"(?=\s*(?:$|[,;|.]))"
 )
 LITERAL_INSTITUTION_BLOCKED_CONTEXT_PREFIXES = (
     "project",
@@ -829,6 +835,25 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
         add_match(text_names, result.status, result.canonical_name)
 
     if text_names:
+        retained_state_label = _infer_retained_state_university_label(raw_affiliation)
+        base_state_label = _state_university_base_label(raw_affiliation)
+        if retained_state_label and base_state_label:
+            retained = _normalize_institution_label(retained_state_label)
+            base_key = _institution_key(base_state_label)
+            replaced = False
+            adjusted: list[str] = []
+            seen_adjusted: set[str] = set()
+            for label in text_names:
+                replacement = retained if _institution_key(label) == base_key else label
+                if replacement == retained:
+                    replaced = True
+                key = _institution_key(replacement)
+                if not key or key in seen_adjusted:
+                    continue
+                seen_adjusted.add(key)
+                adjusted.append(replacement)
+            if replaced and adjusted:
+                return adjusted
         return text_names
 
     # Support US university-system strings where campus is present elsewhere
@@ -1158,6 +1183,10 @@ def _infer_us_state_university_label(value: str) -> str:
         if campus:
             return f"University of {state}, {campus}"
 
+    retained_label = _infer_retained_state_university_label(value)
+    if retained_label:
+        return retained_label
+
     suffix_segment = _state_university_suffix_segment(after_state)
     if not suffix_segment:
         return f"University of {state}"
@@ -1182,6 +1211,29 @@ def _state_university_suffix_segment(after_state: str) -> str:
     if normalized.startswith("in "):
         normalized = normalized[3:].strip()
     return normalized
+
+
+def _state_university_base_label(value: str) -> str:
+    match = STATE_UNIVERSITY_RE.search(value)
+    if match is None:
+        return ""
+    state = _title_case_words(match.group("state"))
+    return f"University of {state}"
+
+
+def _infer_retained_state_university_label(value: str) -> str:
+    match = STATE_UNIVERSITY_RE.search(value)
+    if match is None:
+        return ""
+    state = _title_case_words(match.group("state"))
+    after_state = value[match.end() :]
+    suffix_segment = _state_university_suffix_segment(after_state)
+    if not suffix_segment:
+        return ""
+    for prefix, suffix_label in STATE_UNIVERSITY_RETAINED_SUFFIX_LABELS.items():
+        if suffix_segment.startswith(prefix):
+            return f"University of {state} {suffix_label}"
+    return ""
 
 
 def _state_university_campus_from_suffix(state_key: str, suffix_segment: str) -> str:
@@ -1245,7 +1297,14 @@ def _is_literal_institution_candidate(value: str) -> bool:
         return False
     if not any(marker in normalized for marker in INSTITUTION_MARKER_WORDS):
         return False
-    if normalized in {"university", "college", "state university", "medical center", "research institute"}:
+    if normalized in {
+        "university",
+        "college",
+        "state university",
+        "medical center",
+        "research institute",
+        "school of public health",
+    }:
         return False
     return True
 
@@ -1293,9 +1352,14 @@ def _clean_clause_label(clause: str) -> str:
     return TRAILING_PUNCT.sub("", " ".join(clause.split()))
 
 
+def _normalize_texas_a_and_m_label(value: str) -> str:
+    return re.sub(r"(?i)\btexas\s+a\s+and\s+m\b", "Texas A&M", value)
+
+
 def _normalize_institution_label(clause: str) -> str:
     cleaned = APOSTROPHE_VARIANTS.sub("'", clause)
     cleaned = AMPERSAND.sub(" and ", cleaned)
+    cleaned = _normalize_texas_a_and_m_label(cleaned)
     return _clean_clause_label(cleaned)
 
 

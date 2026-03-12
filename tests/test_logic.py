@@ -574,7 +574,22 @@ def test_extract_institution_names_infers_university_of_state_fallback() -> None
     md_med_names = _extract_institution_names(
         "Center for Advanced Microbiome Research and Innovation, Institute for Genome Sciences, University of Maryland School of Medicine, Baltimore, MD, USA."
     )
-    assert md_med_names == ["University of Maryland"]
+    assert md_med_names == ["University of Maryland School of Medicine"]
+
+    ms_med_center_names = _extract_institution_names(
+        "Center for Immunology and Microbial Research, University of Mississippi Medical Center, Jackson, MS, USA."
+    )
+    assert ms_med_center_names == ["University of Mississippi Medical Center"]
+
+    mn_med_school_names = _extract_institution_names(
+        "Center for Immunology, Department of Laboratory Medicine and Pathology, University of Minnesota Medical School, Minneapolis, MN 55455, USA."
+    )
+    assert mn_med_school_names == ["University of Minnesota Medical School"]
+
+    va_school_of_med_names = _extract_institution_names(
+        "Center for Membrane and Cell Physiology, Department of Molecular Physiology and Biological Physics, University of Virginia School of Medicine, Charlottesville, VA, USA."
+    )
+    assert va_school_of_med_names == ["University of Virginia School of Medicine"]
 
     ne_lincoln_names = _extract_institution_names(
         "Department of Animal Science, University of Nebraska-Lincoln, 3940 Fair St, Lincoln, NE 68503, United States."
@@ -602,6 +617,21 @@ def test_extract_institution_names_literal_fallback_captures_selected_institutio
     assert _extract_institution_names(
         "Augusta University School of Medicine, Augusta, GA, USA."
     ) == ["Augusta University School of Medicine"]
+    assert _extract_institution_names(
+        "Center for Global Infectious Disease Research, Seattle Children's Research Institute , Seattle, Washington, USA."
+    ) == ["Seattle Children's Research Institute"]
+    assert _extract_institution_names("Department of Biology, Texas A&M University, College Station, TX, USA.") == [
+        "Texas A&M"
+    ]
+    assert _extract_institution_names("Department of Biology, Texas A and M University, College Station, TX, USA.") == [
+        "Texas A&M"
+    ]
+    assert _extract_institution_names(
+        "Department of Biostatistics, Harvard T.H. Chan School of Public Health, Boston, MA, USA."
+    ) == ["Harvard T.H. Chan School of Public Health"]
+    assert _extract_institution_names(
+        "Department of Epidemiology, School of Public Health, Boston, MA, USA."
+    ) == []
     assert _extract_institution_names("Harvey Mudd College, Claremont, CA, USA.") == ["Harvey Mudd College"]
     assert _extract_institution_names("University of Houston, Houston, TX, USA.") == ["University of Houston"]
 
