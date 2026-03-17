@@ -1,9 +1,12 @@
+import os
+import time
 from typing import cast
 
 import pytest
 
 pytest.importorskip("fastapi")
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.logic import AnalysisResult
@@ -22,6 +25,7 @@ from app.main import (
     _build_out_of_window_rows,
     _orcid_row_fields,
     _partition_excluded_citation_rows,
+    _save_run_to_disk,
     _deserialize_author,
     _serialize_author,
     _selected_default_excluded_type_terms,
@@ -749,6 +753,84 @@ def test_disambiguate_returns_503_when_concurrency_limit_is_reached(
     assert response.status_code == 503
     assert response.headers["Retry-After"] == str(BUSY_RETRY_AFTER_SECONDS)
     assert "Server busy, retry shortly." in response.text
+
+
+def test_load_run_evicts_stale_in_memory_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as main_module
+
+    run_id = "a" * 32
+    expired_run = _run_state("Jeffrey Rice", 2021, 2026)
+    expired_run.created_at = time.time() - 120
+
+    monkeypatch.setattr(main_module, "RUN_TTL_SECONDS", 60)
+    monkeypatch.setattr(main_module, "RUNS", {run_id: expired_run})
+    monkeypatch.setattr(main_module, "_load_run_from_disk", lambda candidate_run_id: None)
+    deleted_run_ids: list[str] = []
+    monkeypatch.setattr(main_module, "_delete_run_file", lambda candidate_run_id: deleted_run_ids.append(candidate_run_id))
+
+    with pytest.raises(HTTPException) as excinfo:
+        main_module._load_run(run_id)
+
+    assert excinfo.value.status_code == 404
+    assert main_module.RUNS == {}
+    assert deleted_run_ids == [run_id]
+
+
+def test_load_run_from_disk_rejects_and_deletes_expired_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from app import main as main_module
+
+    run_id = "b" * 32
+    expired_run = _run_state("Jeffrey Rice", 2021, 2026)
+    expired_run.created_at = time.time() - 120
+
+    monkeypatch.setattr(main_module, "RUN_TTL_SECONDS", 60)
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path)
+
+    main_module._save_run_to_disk(run_id, expired_run)
+    run_file = main_module._run_file(run_id)
+    assert run_file.exists()
+
+    loaded = main_module._load_run_from_disk(run_id)
+
+    assert loaded is None
+    assert not run_file.exists()
+
+
+def test_save_run_to_disk_sets_restrictive_permissions(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    run_id = "c" * 32
+    run = _run_state("Jeffrey Rice", 2021, 2026)
+
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path)
+
+    _save_run_to_disk(run_id, run)
+
+    run_dir_mode = os.stat(tmp_path).st_mode & 0o777
+    run_file_mode = os.stat(main_module._run_file(run_id)).st_mode & 0o777
+
+    assert run_dir_mode == 0o700
+    assert run_file_mode == 0o600
+
+
+def test_analyze_rejects_invalid_run_id() -> None:
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/analyze",
+        data={
+            "run_id": "not-a-valid-run-id",
+            "selected_cluster_ids": [],
+            "selected_pmids": [],
+            "selected_excluded_pmids": [],
+            "pmid_filter_enabled": "0",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Run not found or expired"}
 
 
 def _run_state(author_name: str, start_year: int | None, end_year: int | None) -> RunState:

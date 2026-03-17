@@ -9,8 +9,9 @@ import os
 import re
 import subprocess
 import threading
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -66,6 +67,7 @@ class RunState:
     orcid_identifier_matches: dict[str, list[str]]
     orcid_affiliation_matches: dict[str, dict[str, str]]
     orcid_sync_error: str | None
+    created_at: float = field(default_factory=time.time)
 
 
 RUNS: dict[str, RunState] = {}
@@ -107,6 +109,7 @@ def _positive_int_env(name: str, default: int) -> int:
 
 MAX_CONCURRENT_DISAMBIGUATIONS = _positive_int_env("ECHIDNA_MAX_CONCURRENT_DISAMBIGUATIONS", 1)
 BUSY_RETRY_AFTER_SECONDS = _positive_int_env("ECHIDNA_BUSY_RETRY_AFTER_SECONDS", 30)
+RUN_TTL_SECONDS = _positive_int_env("ECHIDNA_RUN_TTL_SECONDS", 24 * 60 * 60)
 DISAMBIGUATION_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_DISAMBIGUATIONS)
 
 
@@ -1127,6 +1130,7 @@ def _filter_matches_for_analysis(
 
 
 def _save_run(run_id: str, run: RunState) -> None:
+    _prune_expired_runs()
     RUNS[run_id] = run
     try:
         _save_run_to_disk(run_id, run)
@@ -1138,16 +1142,59 @@ def _run_file(run_id: str) -> Path:
     return RUNS_DIR / f"{run_id}.json"
 
 
+def _run_is_expired(run: RunState, *, now: float | None = None) -> bool:
+    if now is None:
+        now = time.time()
+    return run.created_at <= 0 or (now - run.created_at) > RUN_TTL_SECONDS
+
+
+def _delete_run_file(run_id: str) -> None:
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        return
+    try:
+        _run_file(run_id).unlink(missing_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Run-state disk cleanup skipped for run_id=%s: %s", run_id, exc)
+
+
+def _prune_expired_runs(*, now: float | None = None) -> None:
+    if now is None:
+        now = time.time()
+
+    expired_run_ids = [run_id for run_id, run in RUNS.items() if _run_is_expired(run, now=now)]
+    for run_id in expired_run_ids:
+        RUNS.pop(run_id, None)
+        _delete_run_file(run_id)
+
+    if not RUNS_DIR.exists():
+        return
+
+    ttl_cutoff = now - RUN_TTL_SECONDS
+    for target in RUNS_DIR.glob("*.json"):
+        if target.stat().st_mtime > ttl_cutoff:
+            continue
+        run_id = target.stem
+        if not RUN_ID_PATTERN.fullmatch(run_id):
+            continue
+        try:
+            target.unlink()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Run-state file cleanup skipped for run_id=%s: %s", run_id, exc)
+
+
 def _save_run_to_disk(run_id: str, run: RunState) -> None:
     if not RUN_ID_PATTERN.fullmatch(run_id):
         logger.warning("Refused to persist run with invalid id format: %r", run_id)
         return
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(RUNS_DIR, 0o700)
     target = _run_file(run_id)
     temp = target.with_suffix(".json.tmp")
     payload = _serialize_run(run)
     temp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    os.chmod(temp, 0o600)
     temp.replace(target)
+    os.chmod(target, 0o600)
 
 
 def _load_run_from_disk(run_id: str) -> RunState | None:
@@ -1162,14 +1209,20 @@ def _load_run_from_disk(run_id: str) -> RunState | None:
         logger.warning("Run-state disk load skipped for run_id=%s: %s", run_id, exc)
         return None
     try:
-        return _deserialize_run(payload)
+        created_at_fallback = target.stat().st_mtime
+        run = _deserialize_run(payload, created_at_fallback=created_at_fallback)
     except Exception:  # noqa: BLE001
         logger.exception("Failed to parse run-state payload for run_id=%s", run_id)
         return None
+    if _run_is_expired(run):
+        _delete_run_file(run_id)
+        return None
+    return run
 
 
 def _serialize_run(run: RunState) -> dict[str, Any]:
     return {
+        "created_at": run.created_at,
         "author_name": run.author_name,
         "target_orcid": run.target_orcid,
         "start_year": run.start_year,
@@ -1186,9 +1239,14 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
     }
 
 
-def _deserialize_run(payload: dict[str, Any]) -> RunState:
+def _deserialize_run(payload: dict[str, Any], *, created_at_fallback: float | None = None) -> RunState:
     start_raw = payload.get("start_year")
     end_raw = payload.get("end_year")
+    created_at_raw = payload.get("created_at", created_at_fallback)
+    try:
+        created_at = float(created_at_raw) if created_at_raw is not None else time.time()
+    except (TypeError, ValueError):
+        created_at = time.time()
     return RunState(
         author_name=str(payload["author_name"]),
         target_orcid=str(payload.get("target_orcid", "")),
@@ -1211,6 +1269,7 @@ def _deserialize_run(payload: dict[str, Any]) -> RunState:
             if isinstance(value, dict)
         },
         orcid_sync_error=(str(payload.get("orcid_sync_error", "")).strip() or None),
+        created_at=created_at,
     )
 
 
@@ -1344,9 +1403,14 @@ def _deserialize_match(payload: dict[str, Any]) -> AuthorMatch:
 
 
 def _load_run(run_id: str) -> RunState:
+    _prune_expired_runs()
     run = RUNS.get(run_id)
     if run is not None:
-        return run
+        if _run_is_expired(run):
+            RUNS.pop(run_id, None)
+            _delete_run_file(run_id)
+        else:
+            return run
     run = _load_run_from_disk(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found or expired")
