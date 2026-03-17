@@ -48,9 +48,12 @@ docker compose up -d
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.
 - Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/echidna-runs` and can be overridden with `ECHIDNA_RUNS_DIR`.
+- Usage audit records are stored in SQLite at `ECHIDNA_USAGE_DB_PATH`. Default path is the runtime volume at `usage.db` next to `ECHIDNA_RUNS_DIR`.
 - Persisted run state expires after `ECHIDNA_RUN_TTL_SECONDS` seconds. Default is `86400` (24 hours). Expired runs are rejected and cleaned up opportunistically on save/load.
 - `ECHIDNA_MAX_CONCURRENT_DISAMBIGUATIONS` limits concurrent expensive `/disambiguate` runs per app process. Default is `1`.
 - When the app is saturated it returns `503 Server busy, retry shortly.` with a `Retry-After` header. `ECHIDNA_BUSY_RETRY_AFTER_SECONDS` controls that header value and defaults to `30`.
+- Set `ECHIDNA_ADMIN_USER` and `ECHIDNA_ADMIN_PASSWORD_HASH` to enable the password-protected `GET /admin/usage` endpoint.
+- `ECHIDNA_ADMIN_PASSWORD` is still accepted as a compatibility fallback, but `ECHIDNA_ADMIN_PASSWORD_HASH` is preferred so the password is not stored in plaintext.
 
 ## Reverse Proxy
 
@@ -59,6 +62,25 @@ docker compose up -d
 - The proxy rate-limits:
   - `POST /disambiguate` to `5` requests/minute per client IP with burst `2`
   - `GET /orcid-search` to `20` requests/minute per client IP with burst `10`
+
+## Usage Audit
+
+- `GET /admin/usage` returns recent audited runs as JSON.
+- The endpoint is protected with HTTP Basic auth using `ECHIDNA_ADMIN_USER` and `ECHIDNA_ADMIN_PASSWORD_HASH`.
+- Audit records include the submitted author name, PMID text or uploaded file contents, parsed PMID list, and run outcome.
+- The app does not currently link usage-audit records to client IP addresses or user accounts.
+- Query parameters:
+  - `limit` limits the number of rows returned, default `50`
+  - `author_name` filters by partial author name
+  - `status` filters by exact run status
+
+Generate a password hash for `ECHIDNA_ADMIN_PASSWORD_HASH` with:
+
+```bash
+python -m app.admin_password_hash
+```
+
+The command prompts for the password twice and prints the hash to stdout.
 
 ## Test
 

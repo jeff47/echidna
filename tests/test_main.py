@@ -9,6 +9,8 @@ pytest.importorskip("fastapi")
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.admin_password_hash import main as admin_password_hash_main
+from app.auth import scrypt_password_hash, verify_password_against_hash
 from app.logic import AnalysisResult
 from app.main import app as fastapi_app
 from app.main import (
@@ -549,6 +551,85 @@ def test_orcid_search_endpoint_returns_matches(monkeypatch: pytest.MonkeyPatch) 
     payload = response.json()
     assert payload["author_name"] == "Jeffrey Rice"
     assert payload["matches"][0]["orcid"] == "0000-0002-1825-0097"
+
+
+def test_admin_usage_requires_basic_auth(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    client = TestClient(fastapi_app)
+    response = client.get("/admin/usage")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Basic"
+
+
+def test_admin_usage_returns_recorded_disambiguate_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(main_module.client, "fetch_citations", lambda pmids: [_citation("111")])
+    monkeypatch.setattr(
+        main_module.client,
+        "fetch_litsense_pmids_by_query",
+        lambda *, seed_pmid, author_name, max_pages=10: set(),
+    )
+    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: None)
+
+    client = TestClient(fastapi_app)
+    create_response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": "111",
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+    )
+
+    assert create_response.status_code == 200
+
+    response = client.get("/admin/usage", auth=("admin", "secret"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    item = payload["items"][0]
+    assert item["author_name"] == "Jeffrey Rice"
+    assert item["parsed_pmids"] == ["111"]
+    assert item["submitted_pmids_text"] == "111"
+    assert item["status"] == "completed"
+    assert item["uploaded_filename"] == ""
+
+
+def test_scrypt_password_hash_round_trip() -> None:
+    password_hash = scrypt_password_hash("secret", salt=b"0123456789abcdef")
+
+    assert password_hash.startswith("scrypt$")
+    assert verify_password_against_hash("secret", password_hash) is True
+    assert verify_password_against_hash("wrong", password_hash) is False
+
+
+def test_admin_password_hash_cli_outputs_valid_hash(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = admin_password_hash_main(["secret"])
+
+    captured = capsys.readouterr()
+    password_hash = captured.out.strip()
+
+    assert exit_code == 0
+    assert password_hash.startswith("scrypt$")
+    assert verify_password_against_hash("secret", password_hash) is True
 
 
 def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypatch: pytest.MonkeyPatch) -> None:

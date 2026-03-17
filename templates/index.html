@@ -527,6 +527,11 @@
         </details>
 
         <button type="submit">Find Author Clusters</button>
+        <p class="muted orcid-search-note">
+          Diagnostic note: ECHIDNA stores the submitted author name, PMID text or uploaded file contents, parsed PMID
+          list, and run outcome so runs can be reproduced and debugged. These records are not linked to client IP
+          addresses or user accounts.
+        </p>
       </form>
 
       <div id="help-overlay" class="help-overlay" hidden>
@@ -549,6 +554,8 @@
             <li>Use <strong>Include preprints?</strong> to include or exclude preprints, then adjust other publication
               type exclusions with the expandable checklist (checked by default).</li>
             <li>Select <strong>Find Author Clusters</strong> to continue to author disambiguation.</li>
+            <li>For diagnostics, the app saves the submitted author name, PMID text or uploaded file contents, parsed
+              PMID list, and run outcome. These records are not linked to client IP addresses or user accounts.</li>
           </ul>
           <div class="help-actions">
             <button type="button" id="help-dismiss">Close</button>

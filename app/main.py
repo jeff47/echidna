@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -16,8 +17,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
 from app.logic import (
@@ -35,9 +37,11 @@ from app.logic import (
     _institution_key,
     _has_distinctive_institution_overlap,
 )
+from app.auth import verify_password_against_hash
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
 from app.orcid import OrcidClient
+from app.usage import fetch_usage_runs, record_usage_run, update_usage_run
 
 logging.basicConfig(
     level=os.getenv("ECHIDNA_LOG_LEVEL", "INFO").upper(),
@@ -50,6 +54,8 @@ templates = Jinja2Templates(directory="templates")
 client = NcbiClient()
 orcid_client = OrcidClient()
 RUNS_DIR = Path(os.getenv("ECHIDNA_RUNS_DIR", "/tmp/echidna-runs"))
+USAGE_DB_PATH = Path(os.getenv("ECHIDNA_USAGE_DB_PATH", str(RUNS_DIR.parent / "usage.db")))
+admin_basic = HTTPBasic(auto_error=False)
 
 
 @dataclass(slots=True)
@@ -985,21 +991,89 @@ def _sanitize_citation_affiliations(citations: list[Citation]) -> int:
     return changed
 
 
-def _read_uploaded_text(upload: UploadFile | None) -> str:
+def _read_uploaded_text(upload: UploadFile | None) -> tuple[str, int]:
     if upload is None:
-        return ""
+        return "", 0
     try:
         raw = upload.file.read(MAX_UPLOAD_BYTES + 1)
     except Exception:  # noqa: BLE001
         logger.exception("Failed to read uploaded PMID file: filename=%r", upload.filename)
-        return ""
+        return "", 0
     if not raw:
-        return ""
+        return "", 0
     if len(raw) > MAX_UPLOAD_BYTES:
         raise ValueError(
             f"Uploaded PMID file is too large. Maximum allowed size is {MAX_UPLOAD_BYTES} bytes."
         )
-    return raw.decode("utf-8", errors="ignore")
+    return raw.decode("utf-8", errors="ignore"), len(raw)
+
+
+def _uploaded_filename(upload: UploadFile | None) -> str:
+    return (upload.filename or "").strip() if upload is not None else ""
+
+
+def _record_usage_safe(**kwargs: Any) -> int | None:
+    try:
+        return record_usage_run(USAGE_DB_PATH, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Usage audit write skipped: %s", exc)
+        return None
+
+
+def _update_usage_safe(record_id: int | None, **kwargs: Any) -> None:
+    if record_id is None:
+        return
+    try:
+        update_usage_run(USAGE_DB_PATH, record_id, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Usage audit update skipped for record_id=%s: %s", record_id, exc)
+
+
+def _admin_username() -> str:
+    return os.getenv("ECHIDNA_ADMIN_USER", "").strip()
+
+
+def _admin_password_hash() -> str:
+    return os.getenv("ECHIDNA_ADMIN_PASSWORD_HASH", "").strip()
+
+
+def _admin_password() -> str:
+    return os.getenv("ECHIDNA_ADMIN_PASSWORD", "").strip()
+
+
+def _require_admin_usage_access(credentials: HTTPBasicCredentials | None = Depends(admin_basic)) -> None:
+    username = _admin_username()
+    password_hash = _admin_password_hash()
+    password = _admin_password()
+    if not username or (not password_hash and not password):
+        raise HTTPException(status_code=503, detail="Admin usage endpoint not configured")
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    username_matches = secrets.compare_digest(credentials.username, username)
+    if not username_matches:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    try:
+        if password_hash:
+            password_matches = verify_password_against_hash(credentials.password, password_hash)
+        else:
+            password_matches = secrets.compare_digest(credentials.password, password)
+    except ValueError as exc:
+        logger.warning("Invalid admin password hash configuration: %s", exc)
+        raise HTTPException(status_code=503, detail="Admin usage endpoint not configured") from exc
+    if not password_matches:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 def _build_out_of_window_rows(
@@ -1622,6 +1696,26 @@ def orcid_search(
     }
 
 
+@app.get("/admin/usage")
+def admin_usage(
+    _: None = Depends(_require_admin_usage_access),
+    limit: int = Query(default=50, ge=1, le=200),
+    author_name: str = Query(default=""),
+    status: str = Query(default=""),
+) -> dict[str, object]:
+    try:
+        items = fetch_usage_runs(
+            USAGE_DB_PATH,
+            limit=limit,
+            author_name=author_name,
+            status=status,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Usage audit fetch failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Usage audit unavailable") from exc
+    return {"items": items}
+
+
 @app.get("/echidna.jpg", include_in_schema=False)
 def landing_image() -> FileResponse:
     if not LANDING_IMAGE_PATH.is_file():
@@ -1653,6 +1747,7 @@ def disambiguate(
 ) -> HTMLResponse:
     all_years_enabled = all_years is not None
     include_preprints_enabled = include_preprints is not None
+    uploaded_filename = _uploaded_filename(pmid_file)
     default_excluded_type_options = _publication_type_exclusion_options()
     if default_excluded_types_present is None:
         # Backward compatibility for clients that do not submit the checklist fields.
@@ -1678,6 +1773,22 @@ def disambiguate(
         target = parse_target_name(author_name)
         target_orcid = parse_target_orcid(author_orcid)
     except ValueError as exc:
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=author_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=pmids,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=0,
+            parsed_pmids=[],
+            status="rejected_invalid_author",
+            error_message=str(exc),
+        )
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1698,8 +1809,24 @@ def disambiguate(
         )
 
     try:
-        pmid_file_text = _read_uploaded_text(pmid_file)
+        pmid_file_text, uploaded_size_bytes = _read_uploaded_text(pmid_file)
     except ValueError as exc:
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=target_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=pmids,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=MAX_UPLOAD_BYTES + 1,
+            parsed_pmids=[],
+            status="rejected_upload_too_large",
+            error_message=str(exc),
+        )
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1723,6 +1850,22 @@ def disambiguate(
     parsed_pmids = parse_pmids(combined_pmids_text)
     logger.info("Parsed %d PMID(s) from input", len(parsed_pmids))
     if not parsed_pmids:
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=target_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=combined_pmids_text,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=uploaded_size_bytes,
+            parsed_pmids=[],
+            status="rejected_no_pmids",
+            error_message="No PMIDs found in text input or uploaded file",
+        )
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1743,6 +1886,26 @@ def disambiguate(
         )
 
     if len(parsed_pmids) > MAX_PMID_COUNT:
+        limit_error = (
+            f"Too many PMIDs submitted ({len(parsed_pmids)}). "
+            f"Maximum allowed per run is {MAX_PMID_COUNT}. Please split the input into smaller batches."
+        )
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=target_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=combined_pmids_text,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=uploaded_size_bytes,
+            parsed_pmids=parsed_pmids,
+            status="rejected_pmid_limit",
+            error_message=limit_error,
+        )
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1757,15 +1920,28 @@ def disambiguate(
                 extra_excluded_types=extra_excluded_types,
                 default_excluded_type_options=default_excluded_type_options,
                 selected_default_excluded_types=selected_default_excluded_types,
-                error=(
-                    f"Too many PMIDs submitted ({len(parsed_pmids)}). "
-                    f"Maximum allowed per run is {MAX_PMID_COUNT}. Please split the input into smaller batches."
-                ),
+                error=limit_error,
             ),
             status_code=400,
         )
 
     if not all_years_enabled and start_year > end_year:
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=target_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=combined_pmids_text,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=uploaded_size_bytes,
+            parsed_pmids=parsed_pmids,
+            status="rejected_year_window",
+            error_message="Start Year must be less than or equal to End Year",
+        )
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1786,6 +1962,22 @@ def disambiguate(
         )
 
     if not _acquire_disambiguation_slot():
+        _record_usage_safe(
+            run_id="",
+            author_name=author_name,
+            target_orcid=target_orcid,
+            start_year=start_year,
+            end_year=end_year,
+            all_years=all_years_enabled,
+            include_preprints=include_preprints_enabled,
+            excluded_type_terms=excluded_type_terms,
+            submitted_pmids_text=combined_pmids_text,
+            uploaded_filename=uploaded_filename,
+            uploaded_size_bytes=uploaded_size_bytes,
+            parsed_pmids=parsed_pmids,
+            status="rejected_busy",
+            error_message="Server busy, retry shortly.",
+        )
         return _busy_disambiguation_response(
             request,
             author_name=author_name,
@@ -1799,6 +1991,22 @@ def disambiguate(
             default_excluded_type_options=default_excluded_type_options,
             selected_default_excluded_types=selected_default_excluded_types,
         )
+
+    usage_record_id = _record_usage_safe(
+        run_id="",
+        author_name=author_name,
+        target_orcid=target_orcid,
+        start_year=start_year,
+        end_year=end_year,
+        all_years=all_years_enabled,
+        include_preprints=include_preprints_enabled,
+        excluded_type_terms=excluded_type_terms,
+        submitted_pmids_text=combined_pmids_text,
+        uploaded_filename=uploaded_filename,
+        uploaded_size_bytes=uploaded_size_bytes,
+        parsed_pmids=parsed_pmids,
+        status="accepted",
+    )
 
     try:
         citations: list[Citation] = []
@@ -2023,6 +2231,15 @@ def disambiguate(
             ),
         )
 
+        _update_usage_safe(
+            usage_record_id,
+            run_id=run_id,
+            status=("completed_with_errors" if errors else "completed"),
+            error_message="; ".join(errors),
+            citation_count=len(citations),
+            error_count=len(errors),
+        )
+
         return templates.TemplateResponse(
             request,
             "disambiguate.html",
@@ -2049,6 +2266,13 @@ def disambiguate(
                 "orcid_sync_error": orcid_sync_error,
             },
         )
+    except Exception as exc:  # noqa: BLE001
+        _update_usage_safe(
+            usage_record_id,
+            status="failed",
+            error_message=str(exc),
+        )
+        raise
     finally:
         DISAMBIGUATION_SEMAPHORE.release()
 
