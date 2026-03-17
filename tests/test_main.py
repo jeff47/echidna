@@ -567,6 +567,48 @@ def test_admin_usage_requires_basic_auth(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert response.headers["WWW-Authenticate"] == "Basic"
 
 
+def test_admin_usage_rejects_wrong_password(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    client = TestClient(fastapi_app)
+    response = client.get("/admin/usage", auth=("admin", "wrong"))
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Basic"
+
+
+def test_admin_usage_rejects_wrong_username(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    client = TestClient(fastapi_app)
+    response = client.get("/admin/usage", auth=("wrong", "secret"))
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Basic"
+
+
+def test_admin_usage_returns_503_for_malformed_password_hash(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", "not-a-valid-hash")
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    client = TestClient(fastapi_app)
+    response = client.get("/admin/usage", auth=("admin", "secret"))
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Admin usage endpoint not configured"}
+
+
 def test_admin_usage_returns_recorded_disambiguate_runs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -611,6 +653,38 @@ def test_admin_usage_returns_recorded_disambiguate_runs(
     assert item["submitted_pmids_text"] == "111"
     assert item["status"] == "completed"
     assert item["uploaded_filename"] == ""
+
+
+def test_disambiguate_succeeds_when_usage_audit_writes_fail(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(main_module.client, "fetch_citations", lambda pmids: [_citation("111")])
+    monkeypatch.setattr(
+        main_module.client,
+        "fetch_litsense_pmids_by_query",
+        lambda *, seed_pmid, author_name, max_pages=10: set(),
+    )
+    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: None)
+    monkeypatch.setattr(main_module, "record_usage_run", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+    monkeypatch.setattr(main_module, "update_usage_run", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": "111",
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Step 1: Confirm Author Identity" in response.text
 
 
 def test_scrypt_password_hash_round_trip() -> None:
