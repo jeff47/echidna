@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Precision-first publication counting webapp with PubMed/PMC support"
 requires-python = ">=3.11"
 dependencies = [
-  "affiliation_normalizer @ git+https://github.com/jeff47/affiliation_normalizer.git@main",
+  "affiliation_normalizer @ git+https://github.com/jeff47/affiliation_normalizer.git@81e3f9c5863ddd6e17b8a62042bc9bcbd5c10709",
   "fastapi>=0.115,<1",
   "httpx>=0.27,<1",
   "jinja2>=3.1,<4",

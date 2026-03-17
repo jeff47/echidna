@@ -117,7 +117,10 @@ def record_usage_run(
                 error_count,
             ),
         )
-        return int(cursor.lastrowid)
+        row_id = cursor.lastrowid
+        if row_id is None:
+            raise RuntimeError("SQLite did not return a row id for usage audit insert")
+        return int(row_id)
 
 
 def update_usage_run(
@@ -265,6 +268,8 @@ def fetch_usage_run_by_id(db_path: Path, record_id: int) -> dict[str, Any] | Non
 
     created_at = float(row["created_at"])
     updated_at = float(row["updated_at"])
+    start_year = row["start_year"]
+    end_year = row["end_year"]
     return {
         "id": int(row["id"]),
         "created_at": datetime.fromtimestamp(created_at, timezone.utc).isoformat(),
@@ -272,8 +277,8 @@ def fetch_usage_run_by_id(db_path: Path, record_id: int) -> dict[str, Any] | Non
         "run_id": str(row["run_id"]),
         "author_name": str(row["author_name"]),
         "target_orcid": str(row["target_orcid"]),
-        "start_year": row["start_year"],
-        "end_year": row["end_year"],
+        "start_year": int(start_year) if start_year is not None else None,
+        "end_year": int(end_year) if end_year is not None else None,
         "all_years": bool(row["all_years"]),
         "include_preprints": bool(row["include_preprints"]),
         "excluded_type_terms": json.loads(str(row["excluded_type_terms_json"])),
