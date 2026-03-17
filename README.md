@@ -48,6 +48,16 @@ docker compose up -d
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.
 - Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/echidna-runs` and can be overridden with `ECHIDNA_RUNS_DIR`.
+- `ECHIDNA_MAX_CONCURRENT_DISAMBIGUATIONS` limits concurrent expensive `/disambiguate` runs per app process. Default is `1`.
+- When the app is saturated it returns `503 Server busy, retry shortly.` with a `Retry-After` header. `ECHIDNA_BUSY_RETRY_AFTER_SECONDS` controls that header value and defaults to `30`.
+
+## Reverse Proxy
+
+- `docker compose` now starts an internal Nginx sidecar at `echidna_proxy:8080`.
+- Route external traffic to `echidna_proxy`, not directly to `echidna`.
+- The proxy rate-limits:
+  - `POST /disambiguate` to `5` requests/minute per client IP with burst `2`
+  - `GET /orcid-search` to `20` requests/minute per client IP with burst `10`
 
 ## Test
 

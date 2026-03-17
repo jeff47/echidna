@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 from app.logic import AnalysisResult
 from app.main import app as fastapi_app
 from app.main import (
+    BUSY_RETRY_AFTER_SECONDS,
+    MAX_PMID_COUNT,
+    MAX_UPLOAD_BYTES,
     RunState,
     _apply_uncertain_selection_and_corrections,
     _build_footer_metadata,
@@ -639,6 +642,113 @@ def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
     assert response.status_code == 200
     excluded_type_terms = captured_run["state"].excluded_type_terms
     assert ("preprint" in excluded_type_terms) is expect_preprint_excluded
+
+
+def test_disambiguate_rejects_oversized_pmid_upload_before_upstream_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as main_module
+
+    def fail_fetch(*args: object, **kwargs: object) -> object:
+        pytest.fail("upstream client should not be called for oversized uploads")
+
+    monkeypatch.setattr(main_module.client, "fetch_citations", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_query", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_orcid", fail_fetch)
+    monkeypatch.setattr(main_module.orcid_client, "match_citations", fail_fetch)
+
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": "",
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+        files={
+            "pmid_file": (
+                "pmids.txt",
+                b"1" * (MAX_UPLOAD_BYTES + 1),
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert (
+        f"Uploaded PMID file is too large. Maximum allowed size is {MAX_UPLOAD_BYTES} bytes."
+        in response.text
+    )
+
+
+def test_disambiguate_rejects_excessive_pmid_count_before_upstream_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as main_module
+
+    def fail_fetch(*args: object, **kwargs: object) -> object:
+        pytest.fail("upstream client should not be called when PMID count exceeds the limit")
+
+    monkeypatch.setattr(main_module.client, "fetch_citations", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_query", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_orcid", fail_fetch)
+    monkeypatch.setattr(main_module.orcid_client, "match_citations", fail_fetch)
+
+    pmids = "\n".join(str(index) for index in range(1, MAX_PMID_COUNT + 2))
+
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": pmids,
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        f"Too many PMIDs submitted ({MAX_PMID_COUNT + 1}). Maximum allowed per run is {MAX_PMID_COUNT}."
+        in response.text
+    )
+
+
+def test_disambiguate_returns_503_when_concurrency_limit_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as main_module
+
+    def fail_fetch(*args: object, **kwargs: object) -> object:
+        pytest.fail("upstream client should not be called when the server is busy")
+
+    monkeypatch.setattr(main_module, "_acquire_disambiguation_slot", lambda: False)
+    monkeypatch.setattr(main_module.client, "fetch_citations", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_query", fail_fetch)
+    monkeypatch.setattr(main_module.client, "fetch_litsense_pmids_by_orcid", fail_fetch)
+    monkeypatch.setattr(main_module.orcid_client, "match_citations", fail_fetch)
+
+    client = TestClient(fastapi_app)
+    response = client.post(
+        "/disambiguate",
+        data={
+            "author_name": "Jeffrey Rice",
+            "author_orcid": "",
+            "pmids": "111",
+            "start_year": "2020",
+            "end_year": "2026",
+            "all_years": "on",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == str(BUSY_RETRY_AFTER_SECONDS)
+    assert "Server busy, retry shortly." in response.text
 
 
 def _run_state(author_name: str, start_year: int | None, end_year: int | None) -> RunState:
