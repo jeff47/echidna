@@ -229,3 +229,60 @@ def fetch_usage_runs(
             }
         )
     return records
+
+
+def fetch_usage_run_by_id(db_path: Path, record_id: int) -> dict[str, Any] | None:
+    with _connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                run_id,
+                author_name,
+                target_orcid,
+                start_year,
+                end_year,
+                all_years,
+                include_preprints,
+                excluded_type_terms_json,
+                submitted_pmids_text,
+                uploaded_filename,
+                uploaded_size_bytes,
+                parsed_pmids_json,
+                status,
+                error_message,
+                citation_count,
+                error_count
+            FROM usage_runs
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+    if row is None:
+        return None
+
+    created_at = float(row["created_at"])
+    updated_at = float(row["updated_at"])
+    return {
+        "id": int(row["id"]),
+        "created_at": datetime.fromtimestamp(created_at, timezone.utc).isoformat(),
+        "updated_at": datetime.fromtimestamp(updated_at, timezone.utc).isoformat(),
+        "run_id": str(row["run_id"]),
+        "author_name": str(row["author_name"]),
+        "target_orcid": str(row["target_orcid"]),
+        "start_year": row["start_year"],
+        "end_year": row["end_year"],
+        "all_years": bool(row["all_years"]),
+        "include_preprints": bool(row["include_preprints"]),
+        "excluded_type_terms": json.loads(str(row["excluded_type_terms_json"])),
+        "submitted_pmids_text": str(row["submitted_pmids_text"]),
+        "uploaded_filename": str(row["uploaded_filename"]),
+        "uploaded_size_bytes": int(row["uploaded_size_bytes"]),
+        "parsed_pmids": json.loads(str(row["parsed_pmids_json"])),
+        "status": str(row["status"]),
+        "error_message": str(row["error_message"]),
+        "citation_count": int(row["citation_count"]),
+        "error_count": int(row["error_count"]),
+    }

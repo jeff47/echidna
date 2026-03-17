@@ -36,6 +36,7 @@ from app.main import (
     _xlsx_download_filename,
 )
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow
+from app.usage import record_usage_run
 
 
 def _citation(pmid: str, *, year: int = 2024) -> Citation:
@@ -653,6 +654,59 @@ def test_admin_usage_returns_recorded_disambiguate_runs(
     assert item["submitted_pmids_text"] == "111"
     assert item["status"] == "completed"
     assert item["uploaded_filename"] == ""
+    assert item["rerun_url"] == f"/admin/usage/{item['id']}/rerun"
+
+
+def test_admin_usage_rerun_prefills_index_form(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    record_id = record_usage_run(
+        tmp_path / "usage.db",
+        run_id="",
+        author_name="Laura Donlin",
+        target_orcid="0000-0002-1428-090X",
+        start_year=2021,
+        end_year=2026,
+        all_years=False,
+        include_preprints=False,
+        excluded_type_terms=["editorial", "custom type", "preprint"],
+        submitted_pmids_text="111\n222",
+        uploaded_filename="pmids.txt",
+        uploaded_size_bytes=8,
+        parsed_pmids=["111", "222"],
+        status="completed",
+    )
+
+    client = TestClient(fastapi_app)
+    response = client.get(f"/admin/usage/{record_id}/rerun", auth=("admin", "secret"))
+
+    assert response.status_code == 200
+    assert "Loaded diagnostic record" in response.text
+    assert "Original upload" in response.text
+    assert 'value="Laura Donlin"' in response.text
+    assert 'value="0000-0002-1428-090X"' in response.text
+    assert '>111\n222</textarea>' in response.text
+    assert 'name="default_excluded_types" value="editorial" checked' in response.text
+    assert 'name="extra_excluded_types"' in response.text
+    assert "custom type" in response.text
+
+
+def test_admin_usage_rerun_returns_404_for_unknown_record(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import main as main_module
+
+    monkeypatch.setenv("ECHIDNA_ADMIN_USER", "admin")
+    monkeypatch.setenv("ECHIDNA_ADMIN_PASSWORD_HASH", scrypt_password_hash("secret", salt=b"0123456789abcdef"))
+    monkeypatch.setattr(main_module, "USAGE_DB_PATH", tmp_path / "usage.db")
+
+    client = TestClient(fastapi_app)
+    response = client.get("/admin/usage/999/rerun", auth=("admin", "secret"))
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Usage record not found"}
 
 
 def test_disambiguate_succeeds_when_usage_audit_writes_fail(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

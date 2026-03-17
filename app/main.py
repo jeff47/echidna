@@ -41,7 +41,7 @@ from app.auth import verify_password_against_hash
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
 from app.orcid import OrcidClient
-from app.usage import fetch_usage_runs, record_usage_run, update_usage_run
+from app.usage import fetch_usage_run_by_id, fetch_usage_runs, record_usage_run, update_usage_run
 
 logging.basicConfig(
     level=os.getenv("ECHIDNA_LOG_LEVEL", "INFO").upper(),
@@ -1505,6 +1505,7 @@ def _index_context(
     default_excluded_type_options: list[str],
     selected_default_excluded_types: list[str],
     error: str | None,
+    notice: str | None = None,
 ) -> dict[str, object]:
     return {
         "author_name": author_name,
@@ -1519,7 +1520,47 @@ def _index_context(
         "selected_default_excluded_types": selected_default_excluded_types,
         "year_options": _year_options(),
         "error": error,
+        "notice": notice,
     }
+
+
+def _usage_record_replay_context(record: dict[str, Any]) -> dict[str, object]:
+    default_excluded_type_options = _publication_type_exclusion_options()
+    all_years = bool(record["all_years"])
+    start_year = record["start_year"]
+    end_year = record["end_year"]
+    if not isinstance(start_year, int):
+        start_year = date.today().year - 5
+    if not isinstance(end_year, int):
+        end_year = date.today().year
+
+    excluded_type_terms = _dedupe_terms([str(item) for item in record["excluded_type_terms"]])
+    selected_default_excluded_types = [term for term in default_excluded_type_options if term in excluded_type_terms]
+    extra_excluded_types = "\n".join(
+        term
+        for term in excluded_type_terms
+        if term not in default_excluded_type_options and term != PREPRINT_PUBLICATION_TYPE
+    )
+
+    uploaded_filename = str(record["uploaded_filename"]).strip()
+    notice = f"Loaded diagnostic record {record['id']} for replay."
+    if uploaded_filename:
+        notice += f" Original upload {uploaded_filename!r} has been restored into the PMID text box."
+
+    return _index_context(
+        author_name=str(record["author_name"]),
+        author_orcid=str(record["target_orcid"]),
+        start_year=start_year,
+        end_year=end_year,
+        pmids=str(record["submitted_pmids_text"]),
+        all_years=all_years,
+        include_preprints=bool(record["include_preprints"]),
+        extra_excluded_types=extra_excluded_types,
+        default_excluded_type_options=default_excluded_type_options,
+        selected_default_excluded_types=selected_default_excluded_types,
+        error=None,
+        notice=notice,
+    )
 
 
 def _acquire_disambiguation_slot() -> bool:
@@ -1671,6 +1712,7 @@ def index(request: Request) -> HTMLResponse:
             "selected_default_excluded_types": list(default_excluded_type_options),
             "year_options": _year_options(),
             "error": None,
+            "notice": None,
         },
     )
 
@@ -1713,7 +1755,29 @@ def admin_usage(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Usage audit fetch failed: %s", exc)
         raise HTTPException(status_code=500, detail="Usage audit unavailable") from exc
+    for item in items:
+        item["rerun_url"] = f"/admin/usage/{item['id']}/rerun"
     return {"items": items}
+
+
+@app.get("/admin/usage/{record_id}/rerun", response_class=HTMLResponse)
+def admin_usage_rerun(
+    request: Request,
+    record_id: int,
+    _: None = Depends(_require_admin_usage_access),
+) -> HTMLResponse:
+    try:
+        record = fetch_usage_run_by_id(USAGE_DB_PATH, record_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Usage audit replay lookup failed for record_id=%s: %s", record_id, exc)
+        raise HTTPException(status_code=500, detail="Usage audit unavailable") from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail="Usage record not found")
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        _usage_record_replay_context(record),
+    )
 
 
 @app.get("/echidna.jpg", include_in_schema=False)

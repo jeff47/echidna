@@ -430,6 +430,7 @@
         </div>
       </div>
       {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      {% if notice %}<p>{{ notice }}</p>{% endif %}
       <form method="post" action="/disambiguate" enctype="multipart/form-data">
         <div class="identity-row">
           <div class="identity-field name">

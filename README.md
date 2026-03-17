@@ -66,6 +66,7 @@ docker compose up -d
 ## Usage Audit
 
 - `GET /admin/usage` returns recent audited runs as JSON.
+- Each usage item includes a `rerun_url`. Open `GET /admin/usage/{id}/rerun` to load the saved request back into the normal start form and rerun it through the standard `/disambiguate` flow.
 - The endpoint is protected with HTTP Basic auth using `ECHIDNA_ADMIN_USER` and `ECHIDNA_ADMIN_PASSWORD_HASH`.
 - Audit records include the submitted author name, PMID text or uploaded file contents, parsed PMID list, and run outcome.
 - The app does not currently link usage-audit records to client IP addresses or user accounts.
