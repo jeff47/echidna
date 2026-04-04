@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ from app.auth import verify_password_against_hash
 from app.models import AuthorMatch, Citation, Cluster
 from app.ncbi import NcbiClient, _normalize_affiliation_text, split_chunks
 from app.orcid import OrcidClient
+from app.perf import perf_logging_enabled
 from app.usage import fetch_usage_run_by_id, fetch_usage_runs, record_usage_run, update_usage_run
 
 logging.basicConfig(
@@ -2072,41 +2074,79 @@ def disambiguate(
         status="accepted",
     )
 
+    perf_enabled = perf_logging_enabled()
+    disambiguate_started_at = time.perf_counter() if perf_enabled else 0.0
+    user_pubmed_fetch_seconds = 0.0
+    litsense_query_seconds = 0.0
+    litsense_pubmed_fetch_seconds = 0.0
+    sanitize_seconds = 0.0
+    orcid_identifier_seconds = 0.0
+    filter_seconds = 0.0
+    build_clusters_seconds = 0.0
+    orcid_affiliation_seconds = 0.0
+    render_context_seconds = 0.0
+    save_run_seconds = 0.0
+    user_chunk_count = 0
+    litsense_chunk_count = 0
+
     try:
         citations: list[Citation] = []
         errors: list[str] = []
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         for chunk in split_chunks(parsed_pmids):
+            user_chunk_count += 1
             try:
                 citations.extend(client.fetch_citations(chunk))
             except Exception as exc:  # noqa: BLE001
                 errors.append(str(exc))
                 logger.exception("Chunk fetch failed for %d PMID(s)", len(chunk))
+        if perf_enabled:
+            user_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
         user_provided_pmids = set(parsed_pmids)
         litsense_pmid_pmids: set[str] = set()
         litsense_orcid_pmids: set[str] = set()
-        if parsed_pmids:
-            seed_pmid = parsed_pmids[0]
-            try:
-                litsense_pmid_pmids = client.fetch_litsense_pmids_by_query(seed_pmid=seed_pmid, author_name=author_name)
-                logger.info(
-                    "LitSense seed query completed: seed=%s, returned=%d PMID(s)",
-                    seed_pmid,
-                    len(litsense_pmid_pmids),
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        litsense_seed_future: Future[set[str]] | None = None
+        litsense_orcid_future: Future[set[str]] | None = None
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            if parsed_pmids:
+                seed_pmid = parsed_pmids[0]
+                litsense_seed_future = executor.submit(
+                    client.fetch_litsense_pmids_by_query,
+                    seed_pmid=seed_pmid,
+                    author_name=author_name,
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("LitSense seed query failed for seed=%s author=%r: %s", seed_pmid, author_name, exc)
-                errors.append("LitSense PMID query unavailable")
-        if target_orcid:
-            try:
-                litsense_orcid_pmids = client.fetch_litsense_pmids_by_orcid(target_orcid=target_orcid)
-                logger.info(
-                    "LitSense ORCiD query completed: orcid=%s, returned=%d PMID(s)",
-                    target_orcid,
-                    len(litsense_orcid_pmids),
+            if target_orcid:
+                litsense_orcid_future = executor.submit(
+                    client.fetch_litsense_pmids_by_orcid,
+                    target_orcid=target_orcid,
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("LitSense ORCiD query failed for %s: %s", target_orcid, exc)
-                errors.append("LitSense ORCiD query unavailable")
+
+            if litsense_seed_future is not None:
+                seed_pmid = parsed_pmids[0]
+                try:
+                    litsense_pmid_pmids = litsense_seed_future.result()
+                    logger.info(
+                        "LitSense seed query completed: seed=%s, returned=%d PMID(s)",
+                        seed_pmid,
+                        len(litsense_pmid_pmids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("LitSense seed query failed for seed=%s author=%r: %s", seed_pmid, author_name, exc)
+                    errors.append("LitSense PMID query unavailable")
+            if litsense_orcid_future is not None:
+                try:
+                    litsense_orcid_pmids = litsense_orcid_future.result()
+                    logger.info(
+                        "LitSense ORCiD query completed: orcid=%s, returned=%d PMID(s)",
+                        target_orcid,
+                        len(litsense_orcid_pmids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("LitSense ORCiD query failed for %s: %s", target_orcid, exc)
+                    errors.append("LitSense ORCiD query unavailable")
+        if perf_enabled:
+            litsense_query_seconds = time.perf_counter() - stage_started_at
 
         existing_pmids = {citation.pmid for citation in citations}
         litsense_extra_pmids = sorted(
@@ -2114,15 +2154,22 @@ def disambiguate(
             key=int,
         )
         if litsense_extra_pmids:
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
             logger.info("Fetching %d LitSense-only PMID(s) for verification flow", len(litsense_extra_pmids))
             for chunk in split_chunks(litsense_extra_pmids):
+                litsense_chunk_count += 1
                 try:
                     citations.extend(client.fetch_citations(chunk))
                 except Exception as exc:  # noqa: BLE001
                     errors.append(str(exc))
                     logger.exception("LitSense-only chunk fetch failed for %d PMID(s)", len(chunk))
+            if perf_enabled:
+                litsense_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
 
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         cleaned_affiliations = _sanitize_citation_affiliations(citations)
+        if perf_enabled:
+            sanitize_seconds = time.perf_counter() - stage_started_at
         if cleaned_affiliations:
             logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
 
@@ -2138,6 +2185,7 @@ def disambiguate(
         orcid_affiliation_matches: dict[str, dict[str, str]] = {}
         orcid_sync_warnings: list[str] = []
         if target_orcid:
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
             try:
                 orcid_identifier_matches = orcid_client.match_citations(target_orcid, citations)
                 logger.info(
@@ -2148,11 +2196,14 @@ def disambiguate(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ORCiD identifier cross-check failed for %s: %s", target_orcid, exc)
                 orcid_sync_warnings.append("identifier cross-check unavailable")
+            if perf_enabled:
+                orcid_identifier_seconds = time.perf_counter() - stage_started_at
 
         orcid_sync_error: str | None = None
         window_start = None if all_years_enabled else start_year
         window_end = None if all_years_enabled else end_year
 
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         in_window_citations = [citation for citation in citations if citation_in_window(citation, window_start, window_end)]
         in_window_pmids = {citation.pmid for citation in in_window_citations}
         excluded_out_of_window = 0 if all_years_enabled else (len(citations) - len(in_window_citations))
@@ -2182,9 +2233,14 @@ def disambiguate(
             excluded_out_of_window,
             excluded_by_type,
         )
+        if perf_enabled:
+            filter_seconds = time.perf_counter() - stage_started_at
 
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         clusters, eligible_matches = build_clusters(disambiguation_citations, target, target_orcid=target_orcid)
         _, all_matches = build_clusters(citations, target, target_orcid=target_orcid)
+        if perf_enabled:
+            build_clusters_seconds = time.perf_counter() - stage_started_at
 
         if target_orcid:
             matched_affiliations_by_pmid: dict[str, list[str]] = {}
@@ -2194,6 +2250,7 @@ def disambiguate(
                     continue
                 matched_affiliations_by_pmid.setdefault(match.pmid, []).append(affiliation)
             if matched_affiliations_by_pmid:
+                stage_started_at = time.perf_counter() if perf_enabled else 0.0
                 try:
                     orcid_affiliation_matches = orcid_client.match_affiliations(target_orcid, matched_affiliations_by_pmid)
                     logger.info(
@@ -2204,11 +2261,14 @@ def disambiguate(
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("ORCiD affiliation cross-check failed for %s: %s", target_orcid, exc)
                     orcid_sync_warnings.append("affiliation cross-check unavailable")
+                if perf_enabled:
+                    orcid_affiliation_seconds = time.perf_counter() - stage_started_at
 
         if orcid_sync_warnings:
             orcid_sync_error = "ORCiD " + "; ".join(orcid_sync_warnings)
             errors.append(orcid_sync_error)
 
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         citation_by_pmid = {citation.pmid: citation for citation in disambiguation_citations}
         cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
         cluster_citation_rows = _build_cluster_citation_rows(
@@ -2267,6 +2327,8 @@ def disambiguate(
             excluded_citation_rows_by_window,
             excluded_citation_rows_other,
         ) = _partition_excluded_citation_rows(excluded_citation_rows)
+        if perf_enabled:
+            render_context_seconds = time.perf_counter() - stage_started_at
         logger.info(
             "Disambiguation computed: citations=%d, matches=%d, clusters=%d, errors=%d",
             len(citations),
@@ -2276,6 +2338,7 @@ def disambiguate(
         )
 
         run_id = uuid.uuid4().hex
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         _save_run(
             run_id,
             RunState(
@@ -2294,6 +2357,8 @@ def disambiguate(
                 orcid_sync_error=orcid_sync_error,
             ),
         )
+        if perf_enabled:
+            save_run_seconds = time.perf_counter() - stage_started_at
 
         _update_usage_safe(
             usage_record_id,
@@ -2303,6 +2368,39 @@ def disambiguate(
             citation_count=len(citations),
             error_count=len(errors),
         )
+
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf disambiguate run_id=%s input_pmids=%d user_chunks=%d litsense_extra_pmids=%d "
+                    "litsense_chunks=%d citations=%d eligible_matches=%d all_matches=%d clusters=%d "
+                    "user_pubmed_fetch_seconds=%.3f litsense_query_seconds=%.3f "
+                    "litsense_pubmed_fetch_seconds=%.3f sanitize_seconds=%.3f "
+                    "orcid_identifier_seconds=%.3f filter_seconds=%.3f "
+                    "build_clusters_seconds=%.3f orcid_affiliation_seconds=%.3f "
+                    "render_context_seconds=%.3f save_run_seconds=%.3f total_seconds=%.3f"
+                ),
+                run_id,
+                len(parsed_pmids),
+                user_chunk_count,
+                len(litsense_extra_pmids),
+                litsense_chunk_count,
+                len(citations),
+                len(eligible_matches),
+                len(all_matches),
+                len(clusters),
+                user_pubmed_fetch_seconds,
+                litsense_query_seconds,
+                litsense_pubmed_fetch_seconds,
+                sanitize_seconds,
+                orcid_identifier_seconds,
+                filter_seconds,
+                build_clusters_seconds,
+                orcid_affiliation_seconds,
+                render_context_seconds,
+                save_run_seconds,
+                time.perf_counter() - disambiguate_started_at,
+            )
 
         return templates.TemplateResponse(
             request,

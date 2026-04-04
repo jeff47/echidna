@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
@@ -8,6 +10,10 @@ from typing import Literal
 from affiliation_normalizer import match_affiliation, match_record
 
 from app.models import Author, AuthorMatch, Citation, Cluster, ReportRow, TargetName
+from app.perf import perf_logging_enabled
+
+
+logger = logging.getLogger(__name__)
 
 
 NON_ALPHA_NUM = re.compile(r"[^a-z0-9]+")
@@ -1641,13 +1647,25 @@ def build_clusters(
     target: TargetName,
     target_orcid: str = "",
 ) -> tuple[list[Cluster], list[AuthorMatch]]:
+    perf_enabled = perf_logging_enabled()
+    started_at = time.perf_counter() if perf_enabled else 0.0
+    match_author_seconds = 0.0
+    fingerprint_seconds = 0.0
+    merge_seconds = 0.0
+    cluster_render_seconds = 0.0
+    author_count = 0
+
     cluster_mentions: dict[str, list[AuthorMatch]] = defaultdict(list)
     matches: list[AuthorMatch] = []
 
     for citation in citations:
         citation_matches: list[AuthorMatch] = []
         for author in citation.authors:
+            author_count += 1
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
             matched, method = match_author(author, target, target_orcid=target_orcid)
+            if perf_enabled:
+                match_author_seconds += time.perf_counter() - stage_started_at
             if not matched or method is None:
                 continue
 
@@ -1655,10 +1673,13 @@ def build_clusters(
             if method == "orcid" and author_orcid:
                 cluster_id = f"orcid:{author_orcid}"
             else:
+                stage_started_at = time.perf_counter() if perf_enabled else 0.0
                 aff_key = affiliation_blocks_fingerprint(
                     _author_record_affiliation_blocks(author),
                     fallback_affiliation=author.affiliation or "",
                 )
+                if perf_enabled:
+                    fingerprint_seconds += time.perf_counter() - stage_started_at
                 cluster_id = f"{normalize_token(author.last_name)}|{extract_initials(author.fore_name)}|{aff_key}"
                 if aff_key == "no-affiliation":
                     # Keep no-affiliation candidates independent so users can include/exclude per citation.
@@ -1683,10 +1704,14 @@ def build_clusters(
             matches.append(match)
             cluster_mentions[match.cluster_id].append(match)
 
+    stage_started_at = time.perf_counter() if perf_enabled else 0.0
     cluster_mentions, merged_cluster_id_map = _merge_subset_affiliation_clusters(cluster_mentions)
+    if perf_enabled:
+        merge_seconds = time.perf_counter() - stage_started_at
     for match in matches:
         match.cluster_id = merged_cluster_id_map.get(match.cluster_id, match.cluster_id)
 
+    stage_started_at = time.perf_counter() if perf_enabled else 0.0
     clusters: list[Cluster] = []
     for cluster_id, cluster_matches in cluster_mentions.items():
         years = sorted(
@@ -1709,8 +1734,28 @@ def build_clusters(
                 affiliations=affiliations or ["(no affiliation listed)"],
             )
         )
+    if perf_enabled:
+        cluster_render_seconds = time.perf_counter() - stage_started_at
 
     clusters.sort(key=lambda c: c.mention_count, reverse=True)
+
+    if perf_enabled:
+        logger.info(
+            (
+                "perf build_clusters citations=%d authors=%d matches=%d clusters=%d "
+                "match_author_seconds=%.3f fingerprint_seconds=%.3f merge_seconds=%.3f "
+                "cluster_render_seconds=%.3f total_seconds=%.3f"
+            ),
+            len(citations),
+            author_count,
+            len(matches),
+            len(clusters),
+            match_author_seconds,
+            fingerprint_seconds,
+            merge_seconds,
+            cluster_render_seconds,
+            time.perf_counter() - started_at,
+        )
     return clusters, matches
 
 
@@ -1875,6 +1920,9 @@ def analyze_citations(
     forced_include_pmids: set[str] | None = None,
     excluded_pmids: set[str] | None = None,
 ) -> AnalysisResult:
+    perf_enabled = perf_logging_enabled()
+    started_at = time.perf_counter() if perf_enabled else 0.0
+
     if forced_include_pmids is None:
         forced_include_pmids = set()
     if excluded_pmids is None:
@@ -1955,6 +2003,20 @@ def analyze_citations(
     )
     # Recompute after sorting so review indices map to the rendered row order.
     uncertain_indices = [idx for idx, row in enumerate(rows) if row.uncertainty_reasons]
+
+    if perf_enabled:
+        logger.info(
+            (
+                "perf analyze_citations citations=%d matches=%d selected_clusters=%d "
+                "rows=%d uncertain_rows=%d total_seconds=%.3f"
+            ),
+            len(citations),
+            len(matches),
+            len(selected_cluster_ids),
+            len(rows),
+            len(uncertain_indices),
+            time.perf_counter() - started_at,
+        )
 
     return AnalysisResult(rows=rows, uncertain_indices=uncertain_indices)
 

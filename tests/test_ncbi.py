@@ -9,6 +9,7 @@ from app.ncbi import (
     _extract_litsense_pmids,
     _extract_pmc_article_doi,
     _idconv_records,
+    _parse_pmc_xml_by_pmcid,
     _retry_delay_seconds,
 )
 
@@ -209,6 +210,135 @@ def test_extract_pmc_article_doi_from_article_meta() -> None:
     """
 
     assert _extract_pmc_article_doi(xml) == "10.2000/example.2"
+
+
+def test_parse_pmc_xml_by_pmcid_splits_batched_article_xml() -> None:
+    xml = """
+    <pmc-articleset>
+      <article>
+        <front>
+          <article-meta>
+            <article-id pub-id-type="pmc">111</article-id>
+          </article-meta>
+        </front>
+      </article>
+      <article>
+        <front>
+          <article-meta>
+            <article-id pub-id-type="pmcid">PMC222</article-id>
+          </article-meta>
+        </front>
+      </article>
+    </pmc-articleset>
+    """
+
+    parsed = _parse_pmc_xml_by_pmcid(xml, requested_pmcids=["PMC111", "PMC222"])
+
+    assert sorted(parsed) == ["PMC111", "PMC222"]
+    assert "<article-id pub-id-type=\"pmc\">111</article-id>" in parsed["PMC111"]
+    assert "<article-id pub-id-type=\"pmcid\">PMC222</article-id>" in parsed["PMC222"]
+
+
+def test_fetch_citations_batches_pmc_fetches(monkeypatch) -> None:
+    pubmed_xml = """
+    <PubmedArticleSet>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>100</PMID>
+          <Article>
+            <ArticleTitle>First title</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>J Test</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue>
+            </Journal>
+            <AuthorList>
+              <Author>
+                <LastName>Rice</LastName>
+                <ForeName>Jeffrey</ForeName>
+                <Initials>J</Initials>
+              </Author>
+            </AuthorList>
+          </Article>
+        </MedlineCitation>
+      </PubmedArticle>
+      <PubmedArticle>
+        <MedlineCitation>
+          <PMID>200</PMID>
+          <Article>
+            <ArticleTitle>Second title</ArticleTitle>
+            <Journal>
+              <ISOAbbreviation>J Test</ISOAbbreviation>
+              <JournalIssue><PubDate><Year>2023</Year></PubDate></JournalIssue>
+            </Journal>
+            <AuthorList>
+              <Author>
+                <LastName>Rice</LastName>
+                <ForeName>Jeffrey</ForeName>
+                <Initials>J</Initials>
+              </Author>
+            </AuthorList>
+          </Article>
+        </MedlineCitation>
+      </PubmedArticle>
+    </PubmedArticleSet>
+    """
+    pmc_xml = """
+    <pmc-articleset>
+      <article>
+        <front>
+          <article-meta>
+            <article-id pub-id-type="pmc">111</article-id>
+            <contrib-group>
+              <contrib contrib-type="author">
+                <name>
+                  <surname>Rice</surname>
+                  <given-names>Jeffrey</given-names>
+                </name>
+              </contrib>
+            </contrib-group>
+          </article-meta>
+        </front>
+      </article>
+      <article>
+        <front>
+          <article-meta>
+            <article-id pub-id-type="pmc">222</article-id>
+            <contrib-group>
+              <contrib contrib-type="author">
+                <name>
+                  <surname>Rice</surname>
+                  <given-names>Jeffrey</given-names>
+                </name>
+              </contrib>
+            </contrib-group>
+          </article-meta>
+        </front>
+      </article>
+    </pmc-articleset>
+    """
+    requested_params: list[dict[str, str]] = []
+
+    def fake_request(url: str, params: dict[str, str]) -> httpx.Response:
+        request = httpx.Request("GET", url, params=params)
+        requested_params.append(params)
+        if params.get("db") == "pubmed":
+            return httpx.Response(200, text=pubmed_xml, request=request)
+        if params.get("db") == "pmc":
+            return httpx.Response(200, text=pmc_xml, request=request)
+        return httpx.Response(
+            200,
+            json={"records": [{"pmid": "100", "pmcid": "PMC111"}, {"pmid": "200", "pmcid": "PMC222"}]},
+            request=request,
+        )
+
+    client = NcbiClient()
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    citations = client.fetch_citations(["100", "200"])
+
+    assert [citation.pmcid for citation in citations] == ["PMC111", "PMC222"]
+    assert [citation.source_for_roles for citation in citations] == ["pmc", "pmc"]
+    assert [params["id"] for params in requested_params if params.get("db") == "pmc"] == ["111,222"]
 
 
 def test_extract_litsense_pmids_from_nested_payload() -> None:

@@ -44,6 +44,7 @@ docker compose up -d
 ## Runtime Logging
 
 - Set `ECHIDNA_LOG_LEVEL` in the service environment to `DEBUG` when troubleshooting metadata extraction.
+- Set `ECHIDNA_PERF_LOG=1` in `.runtime/echidna.env` to emit opt-in one-line timing summaries for `/disambiguate`, NCBI fetches, ORCiD matching, and cluster analysis.
 - Logs include PMID-level notes for PMCID mapping, PMC parsing, and affiliation backfill behavior.
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.

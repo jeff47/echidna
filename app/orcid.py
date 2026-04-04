@@ -20,6 +20,7 @@ from app.logic import (
     parse_target_name,
 )
 from app.models import Citation
+from app.perf import perf_logging_enabled
 
 DOI_URL_PREFIX = re.compile(r"^https?://(?:dx\.)?doi\.org/", flags=re.IGNORECASE)
 NON_DIGIT = re.compile(r"\D+")
@@ -77,7 +78,12 @@ class OrcidClient:
     def match_citations(self, target_orcid: str, citations: list[Citation]) -> dict[str, list[str]]:
         if not target_orcid.strip():
             return {}
+        perf_enabled = perf_logging_enabled()
+        started_at = time.perf_counter() if perf_enabled else 0.0
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         identifier_index = self.fetch_work_identifiers(target_orcid)
+        fetch_seconds = time.perf_counter() - stage_started_at if perf_enabled else 0.0
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         matches_by_pmid: dict[str, list[str]] = {}
         for citation in citations:
             match_types: list[str] = []
@@ -89,6 +95,18 @@ class OrcidClient:
                 match_types.append("pmcid")
             if match_types:
                 matches_by_pmid[citation.pmid] = sorted(set(match_types))
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf orcid.match_citations citations=%d matched_pmids=%d "
+                    "fetch_seconds=%.3f local_match_seconds=%.3f total_seconds=%.3f"
+                ),
+                len(citations),
+                len(matches_by_pmid),
+                fetch_seconds,
+                time.perf_counter() - stage_started_at,
+                time.perf_counter() - started_at,
+            )
         return matches_by_pmid
 
     def match_affiliations(
@@ -99,26 +117,59 @@ class OrcidClient:
         if not target_orcid.strip() or not affiliations_by_pmid:
             return {}
 
+        perf_enabled = perf_logging_enabled()
+        started_at = time.perf_counter() if perf_enabled else 0.0
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         organizations = self.fetch_affiliation_organizations(target_orcid)
+        fetch_seconds = time.perf_counter() - stage_started_at if perf_enabled else 0.0
         if not organizations:
+            if perf_enabled:
+                logger.info(
+                    (
+                        "perf orcid.match_affiliations pmids=%d organizations=0 matched_pmids=0 "
+                        "fetch_seconds=%.3f local_match_seconds=0.000 total_seconds=%.3f"
+                    ),
+                    len(affiliations_by_pmid),
+                    fetch_seconds,
+                    time.perf_counter() - started_at,
+                )
             return {}
 
         orgs_by_key: dict[str, list[OrcidOrganization]] = {}
         for org in organizations:
             orgs_by_key.setdefault(org.key, []).append(org)
 
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         matches_by_pmid: dict[str, dict[str, str]] = {}
         for pmid, affiliations in affiliations_by_pmid.items():
             match = _match_affiliation_set(affiliations, organizations, orgs_by_key)
             if match is None:
                 continue
             matches_by_pmid[pmid] = match
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf orcid.match_affiliations pmids=%d organizations=%d matched_pmids=%d "
+                    "fetch_seconds=%.3f local_match_seconds=%.3f total_seconds=%.3f"
+                ),
+                len(affiliations_by_pmid),
+                len(organizations),
+                len(matches_by_pmid),
+                fetch_seconds,
+                time.perf_counter() - stage_started_at,
+                time.perf_counter() - started_at,
+            )
         return matches_by_pmid
 
     def search_profiles(self, author_name: str, limit: int = 12) -> list[dict[str, str]]:
         query = author_name.strip()
         if not query:
             return []
+
+        perf_enabled = perf_logging_enabled()
+        started_at = time.perf_counter() if perf_enabled else 0.0
+        expanded_requests = 0
+        basic_requests = 0
 
         rows = max(1, min(limit, 50))
         headers = {"Accept": "application/json"}
@@ -132,6 +183,7 @@ class OrcidClient:
 
         for candidate_query in search_queries:
             expanded_payload = self._search_payload(path="/expanded-search", query=candidate_query, rows=rows, headers=headers)
+            expanded_requests += 1
             expanded_matches = _extract_expanded_search_matches(expanded_payload)
             for match in expanded_matches:
                 orcid = match.get("orcid", "")
@@ -140,13 +192,38 @@ class OrcidClient:
                 seen_orcids.add(orcid)
                 deduped.append(match)
                 if len(deduped) >= rows:
+                    if perf_enabled:
+                        logger.info(
+                            (
+                                "perf orcid.search_profiles queries=%d expanded_requests=%d "
+                                "basic_requests=%d returned=%d total_seconds=%.3f"
+                            ),
+                            len(search_queries),
+                            expanded_requests,
+                            basic_requests,
+                            len(deduped[:rows]),
+                            time.perf_counter() - started_at,
+                        )
                     return deduped[:rows]
 
         if deduped:
+            if perf_enabled:
+                logger.info(
+                    (
+                        "perf orcid.search_profiles queries=%d expanded_requests=%d "
+                        "basic_requests=%d returned=%d total_seconds=%.3f"
+                    ),
+                    len(search_queries),
+                    expanded_requests,
+                    basic_requests,
+                    len(deduped[:rows]),
+                    time.perf_counter() - started_at,
+                )
             return deduped[:rows]
 
         for candidate_query in search_queries:
             basic_payload = self._search_payload(path="/search", query=candidate_query, rows=rows, headers=headers)
+            basic_requests += 1
             basic_matches = _extract_basic_search_matches(basic_payload)
             for match in basic_matches:
                 orcid = match.get("orcid", "")
@@ -155,7 +232,31 @@ class OrcidClient:
                 seen_orcids.add(orcid)
                 deduped.append(match)
                 if len(deduped) >= rows:
+                    if perf_enabled:
+                        logger.info(
+                            (
+                                "perf orcid.search_profiles queries=%d expanded_requests=%d "
+                                "basic_requests=%d returned=%d total_seconds=%.3f"
+                            ),
+                            len(search_queries),
+                            expanded_requests,
+                            basic_requests,
+                            len(deduped[:rows]),
+                            time.perf_counter() - started_at,
+                        )
                     return deduped[:rows]
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf orcid.search_profiles queries=%d expanded_requests=%d "
+                    "basic_requests=%d returned=%d total_seconds=%.3f"
+                ),
+                len(search_queries),
+                expanded_requests,
+                basic_requests,
+                len(deduped[:rows]),
+                time.perf_counter() - started_at,
+            )
         return deduped[:rows]
 
     def fetch_work_identifiers(self, target_orcid: str) -> dict[str, set[str]]:

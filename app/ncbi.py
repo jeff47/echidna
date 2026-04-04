@@ -4,6 +4,7 @@ import html
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any, Iterable
@@ -14,11 +15,13 @@ import httpx
 
 from app.logic import normalize_orcid, parse_target_name, parse_year
 from app.models import Author, Citation
+from app.perf import perf_logging_enabled
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 IDCONV_URL = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
 LITSENSE_AUTHOR_URL = "https://www.ncbi.nlm.nih.gov/research/litsense-api/api/author/"
 XML_NS_ID = "{http://www.w3.org/XML/1998/namespace}id"
+PMC_XML_FETCH_CHUNK_SIZE = 50
 
 EQUAL_PATTERNS = (
     "contributed equally",
@@ -95,37 +98,74 @@ class NcbiClient:
         self.max_retries = max_retries
         self.min_interval_seconds = 0.11 if self.api_key else 0.34
         self._next_request_at = 0.0
+        self._throttle_lock = threading.Lock()
 
     def fetch_citations(self, pmids: list[str]) -> list[Citation]:
         if not pmids:
             return []
 
+        perf_enabled = perf_logging_enabled()
+        started_at = time.perf_counter() if perf_enabled else 0.0
+        pubmed_fetch_seconds = 0.0
+        pmcid_map_seconds = 0.0
+        pmc_fetch_seconds = 0.0
+        pmc_parse_seconds = 0.0
+        pmc_request_count = 0
+        pmc_fetch_attempts = 0
+        pmc_fetch_successes = 0
+        pmc_fetch_failures = 0
+
         logger.info("Fetching PubMed citations for %d PMID(s)", len(pmids))
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
         pubmed_xml = self._fetch_pubmed_xml(pmids)
         citations = self._parse_pubmed(pubmed_xml)
+        if perf_enabled:
+            pubmed_fetch_seconds = time.perf_counter() - stage_started_at
         logger.info("Parsed %d citation(s) from PubMed", len(citations))
         try:
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
             pmcid_map = self._fetch_pmcid_map(pmids)
+            if perf_enabled:
+                pmcid_map_seconds = time.perf_counter() - stage_started_at
             logger.info("Mapped %d/%d PMID(s) to PMCID", len(pmcid_map), len(pmids))
         except Exception as exc:  # noqa: BLE001
             pmcid_map = {}
+            if perf_enabled:
+                pmcid_map_seconds = time.perf_counter() - stage_started_at
             logger.warning("PMCID mapping request failed: %s", exc)
             for citation in citations:
                 citation.notes.append(f"PMCID mapping failed: {exc}")
 
         for citation in citations:
             citation.pmcid = pmcid_map.get(citation.pmid)
+
+        pmc_xml_by_pmcid: dict[str, str] = {}
+        pmcids = [citation.pmcid for citation in citations if citation.pmcid]
+        if pmcids:
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
+            pmc_xml_by_pmcid, pmc_request_count = self._fetch_pmc_xml_map(pmcids)
+            if perf_enabled:
+                pmc_fetch_seconds = time.perf_counter() - stage_started_at
+
+        for citation in citations:
             if not citation.pmcid:
                 citation.notes.append("No PMCID mapping")
                 logger.debug("PMID %s has no PMCID mapping", citation.pmid)
                 continue
+            pmc_fetch_attempts += 1
             try:
                 pubmed_authors = list(citation.authors)
-                pmc_xml = self._fetch_pmc_xml(citation.pmcid)
+                pmc_xml = pmc_xml_by_pmcid.get(citation.pmcid)
+                if not pmc_xml:
+                    raise RuntimeError(f"PMC XML unavailable for {citation.pmcid}")
+
+                stage_started_at = time.perf_counter() if perf_enabled else 0.0
                 pmc_doi = _extract_pmc_article_doi(pmc_xml)
                 if pmc_doi and not citation.doi:
                     citation.doi = pmc_doi
                 co_first, co_senior, pmc_authors, pmc_count = self._extract_pmc_enrichment(pmc_xml)
+                if perf_enabled:
+                    pmc_parse_seconds += time.perf_counter() - stage_started_at
                 if pmc_count and pmc_count != len(citation.authors):
                     citation.notes.append(
                         f"PMC author count mismatch (PMC {pmc_count} vs PubMed {len(citation.authors)})"
@@ -155,6 +195,7 @@ class NcbiClient:
                         citation.notes.append(f"Filled {filled} affiliation(s) from PMC")
                     citation.notes.append("PMC author metadata incomplete; kept PubMed author list")
                 citation.source_for_roles = "pmc"
+                pmc_fetch_successes += 1
                 logger.debug(
                     "PMID %s enriched from PMC: co_first=%s, co_senior=%s, pmc_authors=%d, used_pmc_authors=%s, filled_affiliations=%d",
                     citation.pmid,
@@ -167,10 +208,33 @@ class NcbiClient:
             except Exception as exc:  # noqa: BLE001
                 citation.source_for_roles = "pubmed"
                 citation.notes.append(f"PMC fetch/parse failed: {exc}")
+                pmc_fetch_failures += 1
                 logger.warning("PMID %s PMC fetch/parse failed: %s", citation.pmid, exc)
 
             if not citation.doi:
                 citation.notes.append("DOI not found in PubMed/PMC metadata")
+
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf ncbi.fetch_citations pmids=%d citations=%d pmc_attempts=%d "
+                    "pmc_successes=%d pmc_failures=%d pmc_request_count=%d pubmed_fetch_seconds=%.3f "
+                    "pmcid_map_seconds=%.3f pmc_fetch_seconds=%.3f pmc_parse_seconds=%.3f "
+                    "min_interval_seconds=%.3f total_seconds=%.3f"
+                ),
+                len(pmids),
+                len(citations),
+                pmc_fetch_attempts,
+                pmc_fetch_successes,
+                pmc_fetch_failures,
+                pmc_request_count,
+                pubmed_fetch_seconds,
+                pmcid_map_seconds,
+                pmc_fetch_seconds,
+                pmc_parse_seconds,
+                self.min_interval_seconds,
+                time.perf_counter() - started_at,
+            )
 
         return citations
 
@@ -198,7 +262,33 @@ class NcbiClient:
         return mapping
 
     def _fetch_pmc_xml(self, pmcid: str) -> str:
-        pmcid_clean = pmcid.replace("PMC", "")
+        return self._fetch_pmc_xml_batch([pmcid])
+
+    def _fetch_pmc_xml_map(self, pmcids: list[str]) -> tuple[dict[str, str], int]:
+        pmc_xml_by_pmcid: dict[str, str] = {}
+        request_count = 0
+        for chunk in split_chunks(_dedupe_preserve_order(pmcids), chunk_size=PMC_XML_FETCH_CHUNK_SIZE):
+            request_count += 1
+            try:
+                batch_xml = self._fetch_pmc_xml_batch(chunk)
+                parsed_xml = _parse_pmc_xml_by_pmcid(batch_xml, requested_pmcids=chunk)
+                pmc_xml_by_pmcid.update(parsed_xml)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("PMC batch fetch/parse failed for %d PMCID(s): %s", len(chunk), exc)
+
+            missing_pmcids = [pmcid for pmcid in chunk if pmcid not in pmc_xml_by_pmcid]
+            for pmcid in missing_pmcids:
+                request_count += 1
+                try:
+                    pmc_xml_by_pmcid[pmcid] = self._fetch_pmc_xml(pmcid)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("PMC single-article fallback failed for %s: %s", pmcid, exc)
+        return pmc_xml_by_pmcid, request_count
+
+    def _fetch_pmc_xml_batch(self, pmcids: list[str]) -> str:
+        pmcid_clean = ",".join(_pmc_query_id(pmcid) for pmcid in pmcids if _pmc_query_id(pmcid))
+        if not pmcid_clean:
+            return ""
         params = {
             "db": "pmc",
             "id": pmcid_clean,
@@ -229,6 +319,10 @@ class NcbiClient:
         params: dict[str, str] | None = None,
         initial_url: str | None = None,
     ) -> set[str]:
+        perf_enabled = perf_logging_enabled()
+        started_at = time.perf_counter() if perf_enabled else 0.0
+        request_count = 0
+
         collected: set[str] = set()
         current_url = initial_url or LITSENSE_AUTHOR_URL
         current_params: dict[str, str] | None = None
@@ -259,6 +353,7 @@ class NcbiClient:
                     break
                 if response is None:
                     raise RuntimeError("LitSense request failed without response")
+                request_count += 1
                 payload = response.json()
                 collected.update(_extract_litsense_pmids(payload))
 
@@ -269,6 +364,19 @@ class NcbiClient:
                     break
                 current_url = next_url
                 current_params = None
+
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf ncbi.fetch_litsense_pmids requests=%d returned_pmids=%d "
+                    "max_pages=%d min_interval_seconds=%.3f total_seconds=%.3f"
+                ),
+                request_count,
+                len(collected),
+                max_pages,
+                self.min_interval_seconds,
+                time.perf_counter() - started_at,
+            )
         return collected
 
     def _request(self, url: str, params: dict[str, str]) -> httpx.Response:
@@ -306,10 +414,11 @@ class NcbiClient:
         raise RuntimeError("NCBI request failed without response")
 
     def _throttle(self) -> None:
-        now = time.monotonic()
-        if now < self._next_request_at:
-            time.sleep(self._next_request_at - now)
-        self._next_request_at = time.monotonic() + self.min_interval_seconds
+        with self._throttle_lock:
+            now = time.monotonic()
+            if now < self._next_request_at:
+                time.sleep(self._next_request_at - now)
+            self._next_request_at = time.monotonic() + self.min_interval_seconds
 
     def _parse_pubmed(self, xml_text: str) -> list[Citation]:
         root = ET.fromstring(xml_text)
@@ -632,6 +741,68 @@ def _extract_pmc_article_doi(xml_text: str) -> str:
         if doi:
             return doi
     return ""
+
+
+def _parse_pmc_xml_by_pmcid(xml_text: str, *, requested_pmcids: list[str]) -> dict[str, str]:
+    if not xml_text.strip():
+        return {}
+
+    root = ET.fromstring(xml_text)
+    articles = list(_iter_pmc_article_nodes(root))
+    if not articles:
+        return {}
+
+    xml_by_pmcid: dict[str, str] = {}
+    requested = [_normalize_pmcid(value) for value in requested_pmcids if _normalize_pmcid(value)]
+    if len(articles) == len(requested):
+        for article, requested_pmcid in zip(articles, requested, strict=True):
+            pmcid = _extract_pmc_article_pmcid(article) or requested_pmcid
+            xml_by_pmcid[pmcid] = ET.tostring(article, encoding="unicode")
+        return xml_by_pmcid
+
+    for article in articles:
+        pmcid = _extract_pmc_article_pmcid(article)
+        if pmcid:
+            xml_by_pmcid[pmcid] = ET.tostring(article, encoding="unicode")
+    return xml_by_pmcid
+
+
+def _iter_pmc_article_nodes(root: ET.Element) -> list[ET.Element]:
+    if _local_tag_name(root.tag) == "article":
+        return [root]
+    return [node for node in root.iter() if _local_tag_name(node.tag) == "article"]
+
+
+def _extract_pmc_article_pmcid(article: ET.Element) -> str:
+    for node in article.iter():
+        if _local_tag_name(node.tag) != "article-id":
+            continue
+        pub_id_type = (node.attrib.get("pub-id-type") or "").strip().lower()
+        if pub_id_type not in {"pmc", "pmcid"}:
+            continue
+        pmcid = _normalize_pmcid("".join(node.itertext()))
+        if pmcid:
+            return pmcid
+    return ""
+
+
+def _local_tag_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _normalize_pmcid(value: str) -> str:
+    raw = re.sub(r"[^A-Za-z0-9]+", "", value).upper()
+    if not raw:
+        return ""
+    if raw.startswith("PMC"):
+        return raw
+    if raw.isdigit():
+        return f"PMC{raw}"
+    return raw
+
+
+def _pmc_query_id(value: str) -> str:
+    return _normalize_pmcid(value).removeprefix("PMC")
 
 
 def _extract_pubmed_update_relationships(article: ET.Element) -> tuple[set[str], set[str]]:
