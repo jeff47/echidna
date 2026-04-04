@@ -48,6 +48,7 @@ docker compose up -d
 - Logs include PMID-level notes for PMCID mapping, PMC parsing, and affiliation backfill behavior.
 - Set `NCBI_API_KEY` (optional but recommended) to reduce `429 Too Many Requests` responses from NCBI E-utilities.
 - Optional `NCBI_EMAIL` can also be set for API identification.
+- `ECHIDNA_NCBI_FETCH_WORKERS` controls parallel chunk fetches during `/disambiguate`; default is `4`.
 - Multi-step run state is persisted on disk for multi-worker deployments; default path is `/tmp/echidna-runs` and can be overridden with `ECHIDNA_RUNS_DIR`.
 - Usage audit records are stored in SQLite at `ECHIDNA_USAGE_DB_PATH`. Default path is the runtime volume at `usage.db` next to `ECHIDNA_RUNS_DIR`.
 - Persisted run state expires after `ECHIDNA_RUN_TTL_SECONDS` seconds. Default is `86400` (24 hours). Expired runs are rejected and cleaned up opportunistically on save/load.

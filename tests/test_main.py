@@ -25,6 +25,7 @@ from app.main import (
     _build_cluster_citation_rows,
     _build_cluster_orcid_affiliation_matches,
     _build_out_of_window_rows,
+    _fetch_citation_chunks_parallel,
     _orcid_row_fields,
     _partition_excluded_citation_rows,
     _save_run_to_disk,
@@ -361,6 +362,26 @@ def test_with_row_render_fields_adds_superseded_preprint_note() -> None:
     )
 
     assert "Preprint skipped: superseded by peer-reviewed PMID(s): 38821936" in str(rows[0]["notes"])
+
+
+def test_fetch_citation_chunks_parallel_preserves_chunk_order(monkeypatch) -> None:
+    from app import main as main_module
+
+    def fake_fetch_citations(pmids: list[str]) -> list[Citation]:
+        if pmids == ["1"]:
+            time.sleep(0.05)
+        return [_citation(pmid) for pmid in pmids]
+
+    monkeypatch.setattr(main_module, "NCBI_FETCH_WORKERS", 2)
+    monkeypatch.setattr(main_module.client, "fetch_citations", fake_fetch_citations)
+
+    citations, errors = _fetch_citation_chunks_parallel(
+        [["1"], ["2"]],
+        chunk_label="Test",
+    )
+
+    assert [citation.pmid for citation in citations] == ["1", "2"]
+    assert errors == []
 
 
 def test_with_row_render_fields_includes_source_badges() -> None:

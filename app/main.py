@@ -116,6 +116,7 @@ def _positive_int_env(name: str, default: int) -> int:
 
 
 MAX_CONCURRENT_DISAMBIGUATIONS = _positive_int_env("ECHIDNA_MAX_CONCURRENT_DISAMBIGUATIONS", 1)
+NCBI_FETCH_WORKERS = _positive_int_env("ECHIDNA_NCBI_FETCH_WORKERS", 4)
 BUSY_RETRY_AFTER_SECONDS = _positive_int_env("ECHIDNA_BUSY_RETRY_AFTER_SECONDS", 30)
 RUN_TTL_SECONDS = _positive_int_env("ECHIDNA_RUN_TTL_SECONDS", 24 * 60 * 60)
 DISAMBIGUATION_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_DISAMBIGUATIONS)
@@ -1029,6 +1030,40 @@ def _update_usage_safe(record_id: int | None, **kwargs: Any) -> None:
         update_usage_run(USAGE_DB_PATH, record_id, **kwargs)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Usage audit update skipped for record_id=%s: %s", record_id, exc)
+
+
+def _fetch_citation_chunks_parallel(
+    pmid_chunks: list[list[str]],
+    *,
+    chunk_label: str,
+) -> tuple[list[Citation], list[str]]:
+    if not pmid_chunks:
+        return [], []
+
+    citations_by_chunk: dict[int, list[Citation]] = {}
+    errors_by_chunk: dict[int, str] = {}
+    max_workers = min(NCBI_FETCH_WORKERS, len(pmid_chunks))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_by_index = {
+            executor.submit(client.fetch_citations, chunk): idx
+            for idx, chunk in enumerate(pmid_chunks)
+        }
+        for future, idx in future_by_index.items():
+            chunk = pmid_chunks[idx]
+            try:
+                citations_by_chunk[idx] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                errors_by_chunk[idx] = str(exc)
+                logger.exception("%s chunk fetch failed for %d PMID(s)", chunk_label, len(chunk))
+
+    citations: list[Citation] = []
+    errors: list[str] = []
+    for idx in range(len(pmid_chunks)):
+        citations.extend(citations_by_chunk.get(idx, []))
+        error = errors_by_chunk.get(idx)
+        if error:
+            errors.append(error)
+    return citations, errors
 
 
 def _admin_username() -> str:
@@ -2093,13 +2128,14 @@ def disambiguate(
         citations: list[Citation] = []
         errors: list[str] = []
         stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        for chunk in split_chunks(parsed_pmids):
-            user_chunk_count += 1
-            try:
-                citations.extend(client.fetch_citations(chunk))
-            except Exception as exc:  # noqa: BLE001
-                errors.append(str(exc))
-                logger.exception("Chunk fetch failed for %d PMID(s)", len(chunk))
+        user_chunks = split_chunks(parsed_pmids)
+        user_chunk_count = len(user_chunks)
+        chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
+            user_chunks,
+            chunk_label="Input PMID",
+        )
+        citations.extend(chunk_citations)
+        errors.extend(chunk_errors)
         if perf_enabled:
             user_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
         user_provided_pmids = set(parsed_pmids)
@@ -2156,13 +2192,14 @@ def disambiguate(
         if litsense_extra_pmids:
             stage_started_at = time.perf_counter() if perf_enabled else 0.0
             logger.info("Fetching %d LitSense-only PMID(s) for verification flow", len(litsense_extra_pmids))
-            for chunk in split_chunks(litsense_extra_pmids):
-                litsense_chunk_count += 1
-                try:
-                    citations.extend(client.fetch_citations(chunk))
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(str(exc))
-                    logger.exception("LitSense-only chunk fetch failed for %d PMID(s)", len(chunk))
+            litsense_chunks = split_chunks(litsense_extra_pmids)
+            litsense_chunk_count = len(litsense_chunks)
+            chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
+                litsense_chunks,
+                chunk_label="LitSense-only",
+            )
+            citations.extend(chunk_citations)
+            errors.extend(chunk_errors)
             if perf_enabled:
                 litsense_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
 
@@ -2373,7 +2410,7 @@ def disambiguate(
             logger.info(
                 (
                     "perf disambiguate run_id=%s input_pmids=%d user_chunks=%d litsense_extra_pmids=%d "
-                    "litsense_chunks=%d citations=%d eligible_matches=%d all_matches=%d clusters=%d "
+                    "litsense_chunks=%d ncbi_fetch_workers=%d citations=%d eligible_matches=%d all_matches=%d clusters=%d "
                     "user_pubmed_fetch_seconds=%.3f litsense_query_seconds=%.3f "
                     "litsense_pubmed_fetch_seconds=%.3f sanitize_seconds=%.3f "
                     "orcid_identifier_seconds=%.3f filter_seconds=%.3f "
@@ -2385,6 +2422,7 @@ def disambiguate(
                 user_chunk_count,
                 len(litsense_extra_pmids),
                 litsense_chunk_count,
+                NCBI_FETCH_WORKERS,
                 len(citations),
                 len(eligible_matches),
                 len(all_matches),
