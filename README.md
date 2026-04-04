@@ -11,6 +11,7 @@ Precision-first webapp for publication counting from PMID lists with author disa
   - Step 2 (conditional): citation-level include/exclude (year, journal, title) only when ambiguity remains after Step 1
   - Step 3 (optional): review only uncertain citations
   - Final: one-line summary + citation table
+- Accepted `/disambiguate` submissions redirect to a live progress page and automatically advance to Step 1 when server-side clustering finishes.
 - PMID input supports both pasted text and optional `.txt` file upload (one PMID per line).
 - Uses PubMed metadata for citation details and print dates.
 - Uses PMC XML as the primary source for author-level metadata (author list, affiliations, co-first/co-senior notes).
@@ -54,6 +55,7 @@ docker compose up -d
 - Persisted run state expires after `ECHIDNA_RUN_TTL_SECONDS` seconds. Default is `86400` (24 hours). Expired runs are rejected and cleaned up opportunistically on save/load.
 - `ECHIDNA_MAX_CONCURRENT_DISAMBIGUATIONS` limits concurrent expensive `/disambiguate` runs per app process. Default is `1`.
 - When the app is saturated it returns `503 Server busy, retry shortly.` with a `Retry-After` header. `ECHIDNA_BUSY_RETRY_AFTER_SECONDS` controls that header value and defaults to `30`.
+- Successful `POST /disambiguate` submissions return a `303` redirect to `/runs/{run_id}/progress`; the browser polls `/runs/{run_id}/status` until results are available at `/runs/{run_id}`.
 - Set `ECHIDNA_ADMIN_USER` and `ECHIDNA_ADMIN_PASSWORD_HASH` to enable the password-protected `GET /admin/usage` endpoint.
 - `ECHIDNA_ADMIN_PASSWORD` is still accepted as a compatibility fallback, but `ECHIDNA_ADMIN_PASSWORD_HASH` is preferred so the password is not stored in plaintext.
 

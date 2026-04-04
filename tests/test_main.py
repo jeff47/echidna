@@ -56,6 +56,31 @@ def _citation(pmid: str, *, year: int = 2024) -> Citation:
     )
 
 
+def _queued_run_id(response) -> str:
+    assert response.status_code == 303
+    location = response.headers["location"]
+    prefix = "/runs/"
+    suffix = "/progress"
+    assert location.startswith(prefix)
+    assert location.endswith(suffix)
+    run_id = location[len(prefix) : -len(suffix)]
+    assert run_id
+    return run_id
+
+
+def _wait_for_disambiguation_job(client: TestClient, run_id: str) -> dict[str, object]:
+    deadline = time.monotonic() + 5
+    status_payload: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        status_response = client.get(f"/runs/{run_id}/status")
+        assert status_response.status_code == 200
+        status_payload = status_response.json()
+        if status_payload["status"] in {"completed", "failed"}:
+            return status_payload
+        time.sleep(0.01)
+    pytest.fail(f"Timed out waiting for disambiguation job {run_id}: {status_payload}")
+
+
 def test_author_serialization_roundtrip_preserves_affiliation_blocks() -> None:
     author = Author(
         position=1,
@@ -647,7 +672,6 @@ def test_admin_usage_returns_recorded_disambiguate_runs(
         "fetch_litsense_pmids_by_query",
         lambda *, seed_pmid, author_name, max_pages=10: set(),
     )
-    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: None)
 
     client = TestClient(fastapi_app)
     create_response = client.post(
@@ -660,9 +684,12 @@ def test_admin_usage_returns_recorded_disambiguate_runs(
             "end_year": "2026",
             "all_years": "on",
         },
+        follow_redirects=False,
     )
 
-    assert create_response.status_code == 200
+    run_id = _queued_run_id(create_response)
+    status_payload = _wait_for_disambiguation_job(client, run_id)
+    assert status_payload["status"] == "completed"
 
     response = client.get("/admin/usage", auth=("admin", "secret"))
 
@@ -741,7 +768,6 @@ def test_disambiguate_succeeds_when_usage_audit_writes_fail(monkeypatch: pytest.
         "fetch_litsense_pmids_by_query",
         lambda *, seed_pmid, author_name, max_pages=10: set(),
     )
-    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: None)
     monkeypatch.setattr(main_module, "record_usage_run", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
     monkeypatch.setattr(main_module, "update_usage_run", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
 
@@ -756,10 +782,15 @@ def test_disambiguate_succeeds_when_usage_audit_writes_fail(monkeypatch: pytest.
             "end_year": "2026",
             "all_years": "on",
         },
+        follow_redirects=False,
     )
 
-    assert response.status_code == 200
-    assert "Step 1: Confirm Author Identity" in response.text
+    run_id = _queued_run_id(response)
+    status_payload = _wait_for_disambiguation_job(client, run_id)
+    assert status_payload["status"] == "completed"
+    result_response = client.get(f"/runs/{run_id}")
+    assert result_response.status_code == 200
+    assert "Step 1: Confirm Author Identity" in result_response.text
 
 
 def test_scrypt_password_hash_round_trip() -> None:
@@ -781,7 +812,10 @@ def test_admin_password_hash_cli_outputs_valid_hash(capsys: pytest.CaptureFixtur
     assert verify_password_against_hash("secret", password_hash) is True
 
 
-def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
     from app import main as main_module
 
     citation_111 = _citation("111")
@@ -792,6 +826,9 @@ def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypa
     }
     fetch_batches: list[list[str]] = []
     captured_run: dict[str, RunState] = {}
+    original_save_run = main_module._save_run
+
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path / "runs")
 
     def fake_fetch_citations(pmids: list[str]) -> list[Citation]:
         fetch_batches.append(list(pmids))
@@ -806,6 +843,7 @@ def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypa
 
     def fake_save_run(run_id: str, run: RunState) -> None:
         captured_run["state"] = run
+        original_save_run(run_id, run)
 
     monkeypatch.setattr(main_module, "_save_run", fake_save_run)
 
@@ -820,9 +858,12 @@ def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypa
             "end_year": "2026",
             "all_years": "on",
         },
+        follow_redirects=False,
     )
 
-    assert response.status_code == 200
+    run_id = _queued_run_id(response)
+    status_payload = _wait_for_disambiguation_job(client, run_id)
+    assert status_payload["status"] == "completed"
     assert fetch_batches == [["111"], ["222"]]
 
     run = captured_run["state"]
@@ -843,6 +884,7 @@ def test_disambiguate_merges_litsense_only_pmids_into_verification_flow(monkeypa
 )
 def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
     include_preprints_field: str | None,
     expect_preprint_excluded: bool,
 ) -> None:
@@ -850,6 +892,9 @@ def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
 
     captured_run: dict[str, RunState] = {}
     citation_111 = _citation("111")
+    original_save_run = main_module._save_run
+
+    monkeypatch.setattr(main_module, "RUNS_DIR", tmp_path / "runs")
 
     monkeypatch.setattr(main_module.client, "fetch_citations", lambda pmids: [citation_111])
     monkeypatch.setattr(
@@ -857,7 +902,11 @@ def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
         "fetch_litsense_pmids_by_query",
         lambda *, seed_pmid, author_name, max_pages=10: {"111"},
     )
-    monkeypatch.setattr(main_module, "_save_run", lambda run_id, run: captured_run.setdefault("state", run))
+    def fake_save_run(run_id: str, run: RunState) -> None:
+        captured_run.setdefault("state", run)
+        original_save_run(run_id, run)
+
+    monkeypatch.setattr(main_module, "_save_run", fake_save_run)
 
     form_data: dict[str, str] = {
         "author_name": "Jeffrey Rice",
@@ -871,9 +920,11 @@ def test_disambiguate_include_preprints_toggle_controls_preprint_exclusion(
         form_data["include_preprints"] = include_preprints_field
 
     client = TestClient(fastapi_app)
-    response = client.post("/disambiguate", data=form_data)
+    response = client.post("/disambiguate", data=form_data, follow_redirects=False)
 
-    assert response.status_code == 200
+    run_id = _queued_run_id(response)
+    status_payload = _wait_for_disambiguation_job(client, run_id)
+    assert status_payload["status"] == "completed"
     excluded_type_terms = captured_run["state"].excluded_type_terms
     assert ("preprint" in excluded_type_terms) is expect_preprint_excluded
 

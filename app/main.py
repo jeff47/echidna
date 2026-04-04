@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
@@ -75,10 +75,34 @@ class RunState:
     orcid_identifier_matches: dict[str, list[str]]
     orcid_affiliation_matches: dict[str, dict[str, str]]
     orcid_sync_error: str | None
+    warnings: list[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
 
 
+@dataclass(slots=True)
+class DisambiguationRequestState:
+    author_name: str
+    target_orcid: str
+    start_year: int
+    end_year: int
+    all_years_enabled: bool
+    excluded_type_terms: list[str]
+    parsed_pmids: list[str]
+
+
+@dataclass(slots=True)
+class DisambiguationJobState:
+    request: DisambiguationRequestState
+    status: str
+    phase: str
+    error_message: str | None = None
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+
 RUNS: dict[str, RunState] = {}
+DISAMBIGUATION_JOBS: dict[str, DisambiguationJobState] = {}
+DISAMBIGUATION_JOBS_LOCK = threading.Lock()
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 YEAR_OPTION_MIN = 1950
 MAX_UPLOAD_BYTES = 64 * 1024
@@ -120,6 +144,10 @@ NCBI_FETCH_WORKERS = _positive_int_env("ECHIDNA_NCBI_FETCH_WORKERS", 4)
 BUSY_RETRY_AFTER_SECONDS = _positive_int_env("ECHIDNA_BUSY_RETRY_AFTER_SECONDS", 30)
 RUN_TTL_SECONDS = _positive_int_env("ECHIDNA_RUN_TTL_SECONDS", 24 * 60 * 60)
 DISAMBIGUATION_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_DISAMBIGUATIONS)
+DISAMBIGUATION_EXECUTOR = ThreadPoolExecutor(
+    max_workers=MAX_CONCURRENT_DISAMBIGUATIONS,
+    thread_name_prefix="echidna-disambiguate",
+)
 
 
 def _short_commit(commit: str | None, *, length: int = 12) -> str | None:
@@ -1272,6 +1300,8 @@ def _prune_expired_runs(*, now: float | None = None) -> None:
     if now is None:
         now = time.time()
 
+    _prune_expired_disambiguation_jobs(now=now)
+
     expired_run_ids = [run_id for run_id, run in RUNS.items() if _run_is_expired(run, now=now)]
     for run_id in expired_run_ids:
         RUNS.pop(run_id, None)
@@ -1291,6 +1321,51 @@ def _prune_expired_runs(*, now: float | None = None) -> None:
             target.unlink()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Run-state file cleanup skipped for run_id=%s: %s", run_id, exc)
+
+
+def _prune_expired_disambiguation_jobs(*, now: float | None = None) -> None:
+    if now is None:
+        now = time.time()
+    with DISAMBIGUATION_JOBS_LOCK:
+        expired_run_ids = [
+            run_id
+            for run_id, job in DISAMBIGUATION_JOBS.items()
+            if job.status in {"completed", "failed"} and (now - job.created_at) > RUN_TTL_SECONDS
+        ]
+        for run_id in expired_run_ids:
+            DISAMBIGUATION_JOBS.pop(run_id, None)
+
+
+def _save_disambiguation_job(run_id: str, job: DisambiguationJobState) -> None:
+    _prune_expired_disambiguation_jobs()
+    with DISAMBIGUATION_JOBS_LOCK:
+        DISAMBIGUATION_JOBS[run_id] = job
+
+
+def _load_disambiguation_job(run_id: str) -> DisambiguationJobState | None:
+    _prune_expired_disambiguation_jobs()
+    with DISAMBIGUATION_JOBS_LOCK:
+        return DISAMBIGUATION_JOBS.get(run_id)
+
+
+def _update_disambiguation_job(
+    run_id: str,
+    *,
+    status: str | None = None,
+    phase: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    with DISAMBIGUATION_JOBS_LOCK:
+        job = DISAMBIGUATION_JOBS.get(run_id)
+        if job is None:
+            return
+        if status is not None:
+            job.status = status
+        if phase is not None:
+            job.phase = phase
+        if error_message is not None:
+            job.error_message = error_message
+        job.updated_at = time.time()
 
 
 def _save_run_to_disk(run_id: str, run: RunState) -> None:
@@ -1347,6 +1422,7 @@ def _serialize_run(run: RunState) -> dict[str, Any]:
         "orcid_identifier_matches": {k: list(v) for k, v in run.orcid_identifier_matches.items()},
         "orcid_affiliation_matches": {k: {str(sub_k): str(sub_v) for sub_k, sub_v in value.items()} for k, value in run.orcid_affiliation_matches.items()},
         "orcid_sync_error": run.orcid_sync_error,
+        "warnings": list(run.warnings),
     }
 
 
@@ -1380,6 +1456,7 @@ def _deserialize_run(payload: dict[str, Any], *, created_at_fallback: float | No
             if isinstance(value, dict)
         },
         orcid_sync_error=(str(payload.get("orcid_sync_error", "")).strip() or None),
+        warnings=[str(v) for v in payload.get("warnings", [])],
         created_at=created_at,
     )
 
@@ -1639,6 +1716,475 @@ def _busy_disambiguation_response(
     )
 
 
+def _disambiguation_result_context(
+    *,
+    run: RunState,
+    run_id: str,
+    errors: list[str] | None = None,
+    selected_excluded_pmids: set[str] | None = None,
+) -> dict[str, object]:
+    eligible_citations = [citation for citation in run.citations if citation.pmid not in run.excluded_pmids]
+    eligible_matches = [match for match in run.matches if match.pmid not in run.excluded_pmids]
+    citation_by_pmid = {citation.pmid: citation for citation in eligible_citations}
+    cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in run.clusters}
+
+    cluster_citation_rows = _build_cluster_citation_rows(
+        citations=eligible_citations,
+        matches=eligible_matches,
+        orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
+        target_orcid=run.target_orcid,
+    )
+    cluster_orcid_affiliation_matches = _build_cluster_orcid_affiliation_matches(cluster_citation_rows)
+    cluster_affiliation_display_rows = _build_cluster_affiliation_display_rows(
+        clusters=run.clusters,
+        cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
+        target_orcid=run.target_orcid,
+    )
+
+    missing_affiliation_rows: list[dict[str, object]] = []
+    for match in eligible_matches:
+        matched_citation = citation_by_pmid.get(match.pmid)
+        if matched_citation is None:
+            continue
+        affiliation = match.author.affiliation or ""
+        reason = _missing_affiliation_reason(matched_citation, affiliation)
+        if not reason:
+            continue
+        missing_affiliation_rows.append(
+            {
+                "cluster_label": cluster_label_by_id.get(match.cluster_id, match.cluster_id),
+                "pmid": matched_citation.pmid,
+                "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{matched_citation.pmid}/",
+                "pmcid": matched_citation.pmcid,
+                "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{matched_citation.pmcid}/" if matched_citation.pmcid else None,
+                "year": matched_citation.print_year,
+                "source_for_roles": matched_citation.source_for_roles,
+                "affiliation": affiliation or "(no affiliation listed)",
+                "missing_reason": reason,
+                "notes": "; ".join(matched_citation.notes),
+                "source_badges": _citation_source_badges(matched_citation),
+                **_orcid_row_fields(
+                    pmid=matched_citation.pmid,
+                    target_orcid=run.target_orcid,
+                    orcid_identifier_matches=run.orcid_identifier_matches,
+                    orcid_affiliation_matches=run.orcid_affiliation_matches,
+                ),
+            }
+        )
+    missing_affiliation_rows.sort(key=_dict_row_sort_key)
+
+    excluded_citation_rows = _build_excluded_citation_rows(
+        citations=run.citations,
+        excluded_pmids=run.excluded_pmids,
+        excluded_reasons=run.excluded_reasons,
+        matches=run.matches,
+        orcid_identifier_matches=run.orcid_identifier_matches,
+        orcid_affiliation_matches=run.orcid_affiliation_matches,
+        target_orcid=run.target_orcid,
+    )
+    (
+        excluded_citation_rows_by_type,
+        excluded_citation_rows_by_window,
+        excluded_citation_rows_other,
+    ) = _partition_excluded_citation_rows(excluded_citation_rows)
+
+    return {
+        "run_id": run_id,
+        "author_name": run.author_name,
+        "target_orcid": run.target_orcid,
+        "start_year": run.start_year,
+        "end_year": run.end_year,
+        "year_window_label": _year_window_label(run.start_year, run.end_year),
+        "clusters": run.clusters,
+        "cluster_citation_rows": cluster_citation_rows,
+        "cluster_affiliation_display_rows": cluster_affiliation_display_rows,
+        "errors": [*run.warnings, *(errors or [])],
+        "missing_affiliation_rows": missing_affiliation_rows,
+        "excluded_citation_rows": excluded_citation_rows,
+        "excluded_citation_rows_by_type": excluded_citation_rows_by_type,
+        "excluded_citation_rows_by_window": excluded_citation_rows_by_window,
+        "excluded_citation_rows_other": excluded_citation_rows_other,
+        "selected_excluded_pmids": sorted(selected_excluded_pmids or set()),
+        "excluded_out_of_window": len(excluded_citation_rows_by_window),
+        "excluded_by_type": len(excluded_citation_rows_by_type),
+        "orcid_sync_error": run.orcid_sync_error,
+    }
+
+
+def _render_disambiguation_result(
+    request: Request,
+    *,
+    run: RunState,
+    run_id: str,
+    errors: list[str] | None = None,
+    selected_excluded_pmids: set[str] | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "disambiguate.html",
+        _disambiguation_result_context(
+            run=run,
+            run_id=run_id,
+            errors=errors,
+            selected_excluded_pmids=selected_excluded_pmids,
+        ),
+        status_code=status_code,
+    )
+
+
+def _run_disambiguation_job(
+    run_id: str,
+    usage_record_id: int | None,
+    request_state: DisambiguationRequestState,
+) -> None:
+    perf_enabled = perf_logging_enabled()
+    disambiguate_started_at = time.perf_counter() if perf_enabled else 0.0
+    user_pubmed_fetch_seconds = 0.0
+    litsense_query_seconds = 0.0
+    litsense_pubmed_fetch_seconds = 0.0
+    sanitize_seconds = 0.0
+    orcid_identifier_seconds = 0.0
+    filter_seconds = 0.0
+    build_clusters_seconds = 0.0
+    orcid_affiliation_seconds = 0.0
+    save_run_seconds = 0.0
+    user_chunk_count = 0
+    litsense_chunk_count = 0
+    target_orcid = request_state.target_orcid
+    target = parse_target_name(request_state.author_name)
+    window_start = None if request_state.all_years_enabled else request_state.start_year
+    window_end = None if request_state.all_years_enabled else request_state.end_year
+    litsense_extra_pmids: list[str] = []
+
+    try:
+        _update_disambiguation_job(
+            run_id,
+            status="running",
+            phase="Fetching user-submitted PMIDs from PubMed and PMC",
+        )
+        citations: list[Citation] = []
+        errors: list[str] = []
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        user_chunks = split_chunks(request_state.parsed_pmids)
+        user_chunk_count = len(user_chunks)
+        chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
+            user_chunks,
+            chunk_label="Input PMID",
+        )
+        citations.extend(chunk_citations)
+        errors.extend(chunk_errors)
+        if perf_enabled:
+            user_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
+
+        user_provided_pmids = set(request_state.parsed_pmids)
+        litsense_pmid_pmids: set[str] = set()
+        litsense_orcid_pmids: set[str] = set()
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        _update_disambiguation_job(
+            run_id,
+            status="running",
+            phase="Querying LitSense for related PMIDs",
+        )
+        litsense_seed_future: Future[set[str]] | None = None
+        litsense_orcid_future: Future[set[str]] | None = None
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            if request_state.parsed_pmids:
+                seed_pmid = request_state.parsed_pmids[0]
+                litsense_seed_future = executor.submit(
+                    client.fetch_litsense_pmids_by_query,
+                    seed_pmid=seed_pmid,
+                    author_name=request_state.author_name,
+                )
+            if target_orcid:
+                litsense_orcid_future = executor.submit(
+                    client.fetch_litsense_pmids_by_orcid,
+                    target_orcid=target_orcid,
+                )
+
+            if litsense_seed_future is not None:
+                seed_pmid = request_state.parsed_pmids[0]
+                try:
+                    litsense_pmid_pmids = litsense_seed_future.result()
+                    logger.info(
+                        "LitSense seed query completed: seed=%s, returned=%d PMID(s)",
+                        seed_pmid,
+                        len(litsense_pmid_pmids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "LitSense seed query failed for seed=%s author=%r: %s",
+                        seed_pmid,
+                        request_state.author_name,
+                        exc,
+                    )
+                    errors.append("LitSense PMID query unavailable")
+            if litsense_orcid_future is not None:
+                try:
+                    litsense_orcid_pmids = litsense_orcid_future.result()
+                    logger.info(
+                        "LitSense ORCiD query completed: orcid=%s, returned=%d PMID(s)",
+                        target_orcid,
+                        len(litsense_orcid_pmids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("LitSense ORCiD query failed for %s: %s", target_orcid, exc)
+                    errors.append("LitSense ORCiD query unavailable")
+        if perf_enabled:
+            litsense_query_seconds = time.perf_counter() - stage_started_at
+
+        existing_pmids = {citation.pmid for citation in citations}
+        litsense_extra_pmids = sorted(
+            (litsense_pmid_pmids | litsense_orcid_pmids) - user_provided_pmids - existing_pmids,
+            key=int,
+        )
+        if litsense_extra_pmids:
+            _update_disambiguation_job(
+                run_id,
+                status="running",
+                phase=f"Fetching {len(litsense_extra_pmids)} LitSense-only PMID(s) from PubMed and PMC",
+            )
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
+            logger.info("Fetching %d LitSense-only PMID(s) for verification flow", len(litsense_extra_pmids))
+            litsense_chunks = split_chunks(litsense_extra_pmids)
+            litsense_chunk_count = len(litsense_chunks)
+            chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
+                litsense_chunks,
+                chunk_label="LitSense-only",
+            )
+            citations.extend(chunk_citations)
+            errors.extend(chunk_errors)
+            if perf_enabled:
+                litsense_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
+
+        _update_disambiguation_job(
+            run_id,
+            status="running",
+            phase="Normalizing author affiliations",
+        )
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        cleaned_affiliations = _sanitize_citation_affiliations(citations)
+        if perf_enabled:
+            sanitize_seconds = time.perf_counter() - stage_started_at
+        if cleaned_affiliations:
+            logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
+
+        for citation in citations:
+            tags = set(citation.source_tags)
+            if citation.pmid in user_provided_pmids:
+                tags.add("user")
+            if citation.pmid in litsense_pmid_pmids or citation.pmid in litsense_orcid_pmids:
+                tags.add("litsense")
+            citation.source_tags = tags
+
+        orcid_identifier_matches: dict[str, list[str]] = {}
+        orcid_affiliation_matches: dict[str, dict[str, str]] = {}
+        orcid_sync_warnings: list[str] = []
+        if target_orcid:
+            _update_disambiguation_job(
+                run_id,
+                status="running",
+                phase="Checking ORCiD publication identifiers",
+            )
+            stage_started_at = time.perf_counter() if perf_enabled else 0.0
+            try:
+                orcid_identifier_matches = orcid_client.match_citations(target_orcid, citations)
+                logger.info(
+                    "ORCiD identifier cross-check completed: matched %d/%d citation(s)",
+                    len(orcid_identifier_matches),
+                    len(citations),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ORCiD identifier cross-check failed for %s: %s", target_orcid, exc)
+                orcid_sync_warnings.append("identifier cross-check unavailable")
+            if perf_enabled:
+                orcid_identifier_seconds = time.perf_counter() - stage_started_at
+
+        _update_disambiguation_job(
+            run_id,
+            status="running",
+            phase="Filtering citations and building author clusters",
+        )
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        in_window_citations = [
+            citation
+            for citation in citations
+            if citation_in_window(citation, window_start, window_end)
+        ]
+        in_window_pmids = {citation.pmid for citation in in_window_citations}
+        excluded_out_of_window = 0 if request_state.all_years_enabled else (len(citations) - len(in_window_citations))
+        excluded_pmids: set[str] = {
+            citation.pmid
+            for citation in citations
+            if citation.pmid not in in_window_pmids
+        }
+        excluded_reasons: dict[str, str] = {
+            citation.pmid: f"Outside year window {_year_window_label(window_start, window_end)}"
+            for citation in citations
+            if citation.pmid not in in_window_pmids
+        }
+        excluded_by_type = 0
+        disambiguation_citations = in_window_citations
+        if request_state.excluded_type_terms:
+            type_filtered: list[Citation] = []
+            for citation in in_window_citations:
+                is_excluded, matched_types = citation_matches_excluded_type(
+                    citation,
+                    request_state.excluded_type_terms,
+                )
+                if is_excluded:
+                    excluded_by_type += 1
+                    citation.notes.append(
+                        f"Excluded by publication type filter: {', '.join(matched_types)}"
+                    )
+                    excluded_pmids.add(citation.pmid)
+                    excluded_reasons[citation.pmid] = (
+                        f"Excluded by publication type: {', '.join(matched_types)}"
+                    )
+                    continue
+                type_filtered.append(citation)
+            disambiguation_citations = type_filtered
+        logger.info(
+            "Window/type filters before disambiguation: in_window=%d, excluded_out_of_window=%d, excluded_by_type=%d",
+            len(disambiguation_citations),
+            excluded_out_of_window,
+            excluded_by_type,
+        )
+        if perf_enabled:
+            filter_seconds = time.perf_counter() - stage_started_at
+
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        clusters, eligible_matches = build_clusters(disambiguation_citations, target, target_orcid=target_orcid)
+        _, all_matches = build_clusters(citations, target, target_orcid=target_orcid)
+        if perf_enabled:
+            build_clusters_seconds = time.perf_counter() - stage_started_at
+
+        if target_orcid:
+            matched_affiliations_by_pmid: dict[str, list[str]] = {}
+            for match in all_matches:
+                affiliation = (match.author.affiliation or "").strip()
+                if not affiliation:
+                    continue
+                matched_affiliations_by_pmid.setdefault(match.pmid, []).append(affiliation)
+            if matched_affiliations_by_pmid:
+                _update_disambiguation_job(
+                    run_id,
+                    status="running",
+                    phase="Checking ORCiD affiliations",
+                )
+                stage_started_at = time.perf_counter() if perf_enabled else 0.0
+                try:
+                    orcid_affiliation_matches = orcid_client.match_affiliations(
+                        target_orcid,
+                        matched_affiliations_by_pmid,
+                    )
+                    logger.info(
+                        "ORCiD affiliation cross-check completed: matched %d/%d citation(s)",
+                        len(orcid_affiliation_matches),
+                        len(matched_affiliations_by_pmid),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("ORCiD affiliation cross-check failed for %s: %s", target_orcid, exc)
+                    orcid_sync_warnings.append("affiliation cross-check unavailable")
+                if perf_enabled:
+                    orcid_affiliation_seconds = time.perf_counter() - stage_started_at
+
+        orcid_sync_error: str | None = None
+        if orcid_sync_warnings:
+            orcid_sync_error = "ORCiD " + "; ".join(orcid_sync_warnings)
+            errors.append(orcid_sync_error)
+
+        _update_disambiguation_job(
+            run_id,
+            status="running",
+            phase="Saving Step 1 results",
+        )
+        stage_started_at = time.perf_counter() if perf_enabled else 0.0
+        _save_run(
+            run_id,
+            RunState(
+                author_name=request_state.author_name,
+                target_orcid=target_orcid,
+                start_year=window_start,
+                end_year=window_end,
+                excluded_type_terms=request_state.excluded_type_terms,
+                citations=citations,
+                clusters=clusters,
+                matches=all_matches,
+                excluded_pmids=excluded_pmids,
+                excluded_reasons=excluded_reasons,
+                orcid_identifier_matches=orcid_identifier_matches,
+                orcid_affiliation_matches=orcid_affiliation_matches,
+                orcid_sync_error=orcid_sync_error,
+                warnings=errors,
+            ),
+        )
+        if perf_enabled:
+            save_run_seconds = time.perf_counter() - stage_started_at
+
+        _update_usage_safe(
+            usage_record_id,
+            run_id=run_id,
+            status=("completed_with_errors" if errors else "completed"),
+            error_message="; ".join(errors),
+            citation_count=len(citations),
+            error_count=len(errors),
+        )
+
+        if perf_enabled:
+            logger.info(
+                (
+                    "perf disambiguate run_id=%s input_pmids=%d user_chunks=%d litsense_extra_pmids=%d "
+                    "litsense_chunks=%d ncbi_fetch_workers=%d citations=%d eligible_matches=%d all_matches=%d clusters=%d "
+                    "user_pubmed_fetch_seconds=%.3f litsense_query_seconds=%.3f "
+                    "litsense_pubmed_fetch_seconds=%.3f sanitize_seconds=%.3f "
+                    "orcid_identifier_seconds=%.3f filter_seconds=%.3f "
+                    "build_clusters_seconds=%.3f orcid_affiliation_seconds=%.3f "
+                    "render_context_seconds=%.3f save_run_seconds=%.3f total_seconds=%.3f"
+                ),
+                run_id,
+                len(request_state.parsed_pmids),
+                user_chunk_count,
+                len(litsense_extra_pmids),
+                litsense_chunk_count,
+                NCBI_FETCH_WORKERS,
+                len(citations),
+                len(eligible_matches),
+                len(all_matches),
+                len(clusters),
+                user_pubmed_fetch_seconds,
+                litsense_query_seconds,
+                litsense_pubmed_fetch_seconds,
+                sanitize_seconds,
+                orcid_identifier_seconds,
+                filter_seconds,
+                build_clusters_seconds,
+                orcid_affiliation_seconds,
+                0.0,
+                save_run_seconds,
+                time.perf_counter() - disambiguate_started_at,
+            )
+
+        _update_disambiguation_job(run_id, status="completed", phase="Complete")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Disambiguation job failed for run_id=%s", run_id)
+        _update_usage_safe(
+            usage_record_id,
+            run_id=run_id,
+            status="failed",
+            error_message=str(exc),
+        )
+        _update_disambiguation_job(
+            run_id,
+            status="failed",
+            phase="Failed",
+            error_message=str(exc),
+        )
+    finally:
+        DISAMBIGUATION_SEMAPHORE.release()
+
+
 def _render_analysis_result(
     request: Request,
     *,
@@ -1831,6 +2377,105 @@ def favicon() -> FileResponse:
     return FileResponse(FAVICON_PATH, media_type="image/x-icon")
 
 
+def _disambiguation_progress_context(
+    run_id: str,
+    job: DisambiguationJobState,
+) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "author_name": job.request.author_name,
+        "target_orcid": job.request.target_orcid,
+        "pmid_count": len(job.request.parsed_pmids),
+        "status": job.status,
+        "phase": job.phase,
+        "error_message": job.error_message,
+        "status_url": f"/runs/{run_id}/status",
+        "result_url": f"/runs/{run_id}",
+        "poll_interval_ms": 2000,
+    }
+
+
+@app.get("/runs/{run_id}/progress", response_class=HTMLResponse)
+def disambiguation_progress(request: Request, run_id: str) -> Response:
+    job = _load_disambiguation_job(run_id)
+    if job is None:
+        _load_run(run_id)
+        return RedirectResponse(url=f"/runs/{run_id}", status_code=303)
+    if job.status == "completed":
+        try:
+            _load_run(run_id)
+        except HTTPException:
+            context = _disambiguation_progress_context(run_id, job)
+            context["status"] = "failed"
+            context["phase"] = "Results unavailable"
+            context["error_message"] = "Disambiguation completed, but saved results are unavailable."
+            return templates.TemplateResponse(
+                request,
+                "disambiguate_progress.html",
+                context,
+                headers={"Cache-Control": "no-store"},
+            )
+        return RedirectResponse(url=f"/runs/{run_id}", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "disambiguate_progress.html",
+        _disambiguation_progress_context(run_id, job),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/runs/{run_id}/status")
+def disambiguation_status(run_id: str) -> dict[str, object]:
+    job = _load_disambiguation_job(run_id)
+    if job is not None:
+        if job.status == "completed":
+            try:
+                _load_run(run_id)
+            except HTTPException:
+                return {
+                    "run_id": run_id,
+                    "status": "failed",
+                    "phase": "Results unavailable",
+                    "error_message": "Disambiguation completed, but saved results are unavailable.",
+                    "elapsed_seconds": max(0.0, round(time.time() - job.created_at, 1)),
+                    "result_url": None,
+                }
+        return {
+            "run_id": run_id,
+            "status": job.status,
+            "phase": job.phase,
+            "error_message": job.error_message,
+            "elapsed_seconds": max(0.0, round(time.time() - job.created_at, 1)),
+            "result_url": f"/runs/{run_id}" if job.status == "completed" else None,
+        }
+
+    _load_run(run_id)
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "phase": "Complete",
+        "error_message": None,
+        "elapsed_seconds": None,
+        "result_url": f"/runs/{run_id}",
+    }
+
+
+@app.get("/runs/{run_id}", response_class=HTMLResponse)
+def disambiguation_result(request: Request, run_id: str) -> Response:
+    try:
+        run = _load_run(run_id)
+    except HTTPException:
+        job = _load_disambiguation_job(run_id)
+        if job is None:
+            raise
+        return RedirectResponse(url=f"/runs/{run_id}/progress", status_code=303)
+    return _render_disambiguation_result(
+        request,
+        run=run,
+        run_id=run_id,
+    )
+
+
 @app.post("/disambiguate", response_class=HTMLResponse)
 def disambiguate(
     request: Request,
@@ -1845,7 +2490,7 @@ def disambiguate(
     default_excluded_types: list[str] = Form(default=[]),
     default_excluded_types_present: str | None = Form(default=None),
     extra_excluded_types: str = Form(default=""),
-) -> HTMLResponse:
+) -> Response:
     all_years_enabled = all_years is not None
     include_preprints_enabled = include_preprints is not None
     uploaded_filename = _uploaded_filename(pmid_file)
@@ -2093,8 +2738,9 @@ def disambiguate(
             selected_default_excluded_types=selected_default_excluded_types,
         )
 
+    run_id = uuid.uuid4().hex
     usage_record_id = _record_usage_safe(
-        run_id="",
+        run_id=run_id,
         author_name=author_name,
         target_orcid=target_orcid,
         start_year=start_year,
@@ -2108,373 +2754,47 @@ def disambiguate(
         parsed_pmids=parsed_pmids,
         status="accepted",
     )
-
-    perf_enabled = perf_logging_enabled()
-    disambiguate_started_at = time.perf_counter() if perf_enabled else 0.0
-    user_pubmed_fetch_seconds = 0.0
-    litsense_query_seconds = 0.0
-    litsense_pubmed_fetch_seconds = 0.0
-    sanitize_seconds = 0.0
-    orcid_identifier_seconds = 0.0
-    filter_seconds = 0.0
-    build_clusters_seconds = 0.0
-    orcid_affiliation_seconds = 0.0
-    render_context_seconds = 0.0
-    save_run_seconds = 0.0
-    user_chunk_count = 0
-    litsense_chunk_count = 0
-
+    request_state = DisambiguationRequestState(
+        author_name=author_name,
+        target_orcid=target_orcid,
+        start_year=start_year,
+        end_year=end_year,
+        all_years_enabled=all_years_enabled,
+        excluded_type_terms=excluded_type_terms,
+        parsed_pmids=parsed_pmids,
+    )
+    _save_disambiguation_job(
+        run_id,
+        DisambiguationJobState(
+            request=request_state,
+            status="queued",
+            phase="Queued and waiting to start",
+        ),
+    )
     try:
-        citations: list[Citation] = []
-        errors: list[str] = []
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        user_chunks = split_chunks(parsed_pmids)
-        user_chunk_count = len(user_chunks)
-        chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
-            user_chunks,
-            chunk_label="Input PMID",
-        )
-        citations.extend(chunk_citations)
-        errors.extend(chunk_errors)
-        if perf_enabled:
-            user_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
-        user_provided_pmids = set(parsed_pmids)
-        litsense_pmid_pmids: set[str] = set()
-        litsense_orcid_pmids: set[str] = set()
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        litsense_seed_future: Future[set[str]] | None = None
-        litsense_orcid_future: Future[set[str]] | None = None
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            if parsed_pmids:
-                seed_pmid = parsed_pmids[0]
-                litsense_seed_future = executor.submit(
-                    client.fetch_litsense_pmids_by_query,
-                    seed_pmid=seed_pmid,
-                    author_name=author_name,
-                )
-            if target_orcid:
-                litsense_orcid_future = executor.submit(
-                    client.fetch_litsense_pmids_by_orcid,
-                    target_orcid=target_orcid,
-                )
-
-            if litsense_seed_future is not None:
-                seed_pmid = parsed_pmids[0]
-                try:
-                    litsense_pmid_pmids = litsense_seed_future.result()
-                    logger.info(
-                        "LitSense seed query completed: seed=%s, returned=%d PMID(s)",
-                        seed_pmid,
-                        len(litsense_pmid_pmids),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("LitSense seed query failed for seed=%s author=%r: %s", seed_pmid, author_name, exc)
-                    errors.append("LitSense PMID query unavailable")
-            if litsense_orcid_future is not None:
-                try:
-                    litsense_orcid_pmids = litsense_orcid_future.result()
-                    logger.info(
-                        "LitSense ORCiD query completed: orcid=%s, returned=%d PMID(s)",
-                        target_orcid,
-                        len(litsense_orcid_pmids),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("LitSense ORCiD query failed for %s: %s", target_orcid, exc)
-                    errors.append("LitSense ORCiD query unavailable")
-        if perf_enabled:
-            litsense_query_seconds = time.perf_counter() - stage_started_at
-
-        existing_pmids = {citation.pmid for citation in citations}
-        litsense_extra_pmids = sorted(
-            (litsense_pmid_pmids | litsense_orcid_pmids) - user_provided_pmids - existing_pmids,
-            key=int,
-        )
-        if litsense_extra_pmids:
-            stage_started_at = time.perf_counter() if perf_enabled else 0.0
-            logger.info("Fetching %d LitSense-only PMID(s) for verification flow", len(litsense_extra_pmids))
-            litsense_chunks = split_chunks(litsense_extra_pmids)
-            litsense_chunk_count = len(litsense_chunks)
-            chunk_citations, chunk_errors = _fetch_citation_chunks_parallel(
-                litsense_chunks,
-                chunk_label="LitSense-only",
-            )
-            citations.extend(chunk_citations)
-            errors.extend(chunk_errors)
-            if perf_enabled:
-                litsense_pubmed_fetch_seconds = time.perf_counter() - stage_started_at
-
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        cleaned_affiliations = _sanitize_citation_affiliations(citations)
-        if perf_enabled:
-            sanitize_seconds = time.perf_counter() - stage_started_at
-        if cleaned_affiliations:
-            logger.info("Post-fetch affiliation sanitation updated %d author affiliation value(s)", cleaned_affiliations)
-
-        for citation in citations:
-            tags = set(citation.source_tags)
-            if citation.pmid in user_provided_pmids:
-                tags.add("user")
-            if citation.pmid in litsense_pmid_pmids or citation.pmid in litsense_orcid_pmids:
-                tags.add("litsense")
-            citation.source_tags = tags
-
-        orcid_identifier_matches: dict[str, list[str]] = {}
-        orcid_affiliation_matches: dict[str, dict[str, str]] = {}
-        orcid_sync_warnings: list[str] = []
-        if target_orcid:
-            stage_started_at = time.perf_counter() if perf_enabled else 0.0
-            try:
-                orcid_identifier_matches = orcid_client.match_citations(target_orcid, citations)
-                logger.info(
-                    "ORCiD identifier cross-check completed: matched %d/%d citation(s)",
-                    len(orcid_identifier_matches),
-                    len(citations),
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ORCiD identifier cross-check failed for %s: %s", target_orcid, exc)
-                orcid_sync_warnings.append("identifier cross-check unavailable")
-            if perf_enabled:
-                orcid_identifier_seconds = time.perf_counter() - stage_started_at
-
-        orcid_sync_error: str | None = None
-        window_start = None if all_years_enabled else start_year
-        window_end = None if all_years_enabled else end_year
-
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        in_window_citations = [citation for citation in citations if citation_in_window(citation, window_start, window_end)]
-        in_window_pmids = {citation.pmid for citation in in_window_citations}
-        excluded_out_of_window = 0 if all_years_enabled else (len(citations) - len(in_window_citations))
-        excluded_pmids: set[str] = {citation.pmid for citation in citations if citation.pmid not in in_window_pmids}
-        excluded_reasons: dict[str, str] = {
-            citation.pmid: f"Outside year window {_year_window_label(window_start, window_end)}"
-            for citation in citations
-            if citation.pmid not in in_window_pmids
-        }
-        excluded_by_type = 0
-        disambiguation_citations = in_window_citations
-        if excluded_type_terms:
-            type_filtered: list[Citation] = []
-            for citation in in_window_citations:
-                is_excluded, matched_types = citation_matches_excluded_type(citation, excluded_type_terms)
-                if is_excluded:
-                    excluded_by_type += 1
-                    citation.notes.append(f"Excluded by publication type filter: {', '.join(matched_types)}")
-                    excluded_pmids.add(citation.pmid)
-                    excluded_reasons[citation.pmid] = f"Excluded by publication type: {', '.join(matched_types)}"
-                    continue
-                type_filtered.append(citation)
-            disambiguation_citations = type_filtered
-        logger.info(
-            "Window/type filters before disambiguation: in_window=%d, excluded_out_of_window=%d, excluded_by_type=%d",
-            len(disambiguation_citations),
-            excluded_out_of_window,
-            excluded_by_type,
-        )
-        if perf_enabled:
-            filter_seconds = time.perf_counter() - stage_started_at
-
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        clusters, eligible_matches = build_clusters(disambiguation_citations, target, target_orcid=target_orcid)
-        _, all_matches = build_clusters(citations, target, target_orcid=target_orcid)
-        if perf_enabled:
-            build_clusters_seconds = time.perf_counter() - stage_started_at
-
-        if target_orcid:
-            matched_affiliations_by_pmid: dict[str, list[str]] = {}
-            for match in all_matches:
-                affiliation = (match.author.affiliation or "").strip()
-                if not affiliation:
-                    continue
-                matched_affiliations_by_pmid.setdefault(match.pmid, []).append(affiliation)
-            if matched_affiliations_by_pmid:
-                stage_started_at = time.perf_counter() if perf_enabled else 0.0
-                try:
-                    orcid_affiliation_matches = orcid_client.match_affiliations(target_orcid, matched_affiliations_by_pmid)
-                    logger.info(
-                        "ORCiD affiliation cross-check completed: matched %d/%d citation(s)",
-                        len(orcid_affiliation_matches),
-                        len(matched_affiliations_by_pmid),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("ORCiD affiliation cross-check failed for %s: %s", target_orcid, exc)
-                    orcid_sync_warnings.append("affiliation cross-check unavailable")
-                if perf_enabled:
-                    orcid_affiliation_seconds = time.perf_counter() - stage_started_at
-
-        if orcid_sync_warnings:
-            orcid_sync_error = "ORCiD " + "; ".join(orcid_sync_warnings)
-            errors.append(orcid_sync_error)
-
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        citation_by_pmid = {citation.pmid: citation for citation in disambiguation_citations}
-        cluster_label_by_id = {cluster.cluster_id: cluster.label for cluster in clusters}
-        cluster_citation_rows = _build_cluster_citation_rows(
-            citations=disambiguation_citations,
-            matches=eligible_matches,
-            orcid_identifier_matches=orcid_identifier_matches,
-            orcid_affiliation_matches=orcid_affiliation_matches,
-            target_orcid=target_orcid,
-        )
-        cluster_orcid_affiliation_matches = _build_cluster_orcid_affiliation_matches(cluster_citation_rows)
-        cluster_affiliation_display_rows = _build_cluster_affiliation_display_rows(
-            clusters=clusters,
-            cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
-            target_orcid=target_orcid,
-        )
-        missing_affiliation_rows: list[dict[str, object]] = []
-        for match in eligible_matches:
-            matched_citation = citation_by_pmid.get(match.pmid)
-            if matched_citation is None:
-                continue
-            affiliation = match.author.affiliation or ""
-            reason = _missing_affiliation_reason(matched_citation, affiliation)
-            row: dict[str, object] = {
-                "cluster_label": cluster_label_by_id.get(match.cluster_id, match.cluster_id),
-                "pmid": matched_citation.pmid,
-                "pmid_link": f"https://pubmed.ncbi.nlm.nih.gov/{matched_citation.pmid}/",
-                "pmcid": matched_citation.pmcid,
-                "pmcid_link": f"https://pmc.ncbi.nlm.nih.gov/articles/{matched_citation.pmcid}/" if matched_citation.pmcid else None,
-                "year": matched_citation.print_year,
-                "source_for_roles": matched_citation.source_for_roles,
-                "affiliation": affiliation or "(no affiliation listed)",
-                "missing_reason": reason,
-                "notes": "; ".join(matched_citation.notes),
-                "source_badges": _citation_source_badges(matched_citation),
-                **_orcid_row_fields(
-                    pmid=matched_citation.pmid,
-                    target_orcid=target_orcid,
-                    orcid_identifier_matches=orcid_identifier_matches,
-                    orcid_affiliation_matches=orcid_affiliation_matches,
-                ),
-            }
-            if reason:
-                missing_affiliation_rows.append(row)
-        missing_affiliation_rows.sort(key=_dict_row_sort_key)
-        excluded_citation_rows = _build_excluded_citation_rows(
-            citations=citations,
-            excluded_pmids=excluded_pmids,
-            excluded_reasons=excluded_reasons,
-            matches=all_matches,
-            orcid_identifier_matches=orcid_identifier_matches,
-            orcid_affiliation_matches=orcid_affiliation_matches,
-            target_orcid=target_orcid,
-        )
-        (
-            excluded_citation_rows_by_type,
-            excluded_citation_rows_by_window,
-            excluded_citation_rows_other,
-        ) = _partition_excluded_citation_rows(excluded_citation_rows)
-        if perf_enabled:
-            render_context_seconds = time.perf_counter() - stage_started_at
-        logger.info(
-            "Disambiguation computed: citations=%d, matches=%d, clusters=%d, errors=%d",
-            len(citations),
-            len(all_matches),
-            len(clusters),
-            len(errors),
-        )
-
-        run_id = uuid.uuid4().hex
-        stage_started_at = time.perf_counter() if perf_enabled else 0.0
-        _save_run(
+        DISAMBIGUATION_EXECUTOR.submit(
+            _run_disambiguation_job,
             run_id,
-            RunState(
-                author_name=author_name,
-                target_orcid=target_orcid,
-                start_year=window_start,
-                end_year=window_end,
-                excluded_type_terms=excluded_type_terms,
-                citations=citations,
-                clusters=clusters,
-                matches=all_matches,
-                excluded_pmids=excluded_pmids,
-                excluded_reasons=excluded_reasons,
-                orcid_identifier_matches=orcid_identifier_matches,
-                orcid_affiliation_matches=orcid_affiliation_matches,
-                orcid_sync_error=orcid_sync_error,
-            ),
+            usage_record_id,
+            request_state,
         )
-        if perf_enabled:
-            save_run_seconds = time.perf_counter() - stage_started_at
-
+        logger.info("Disambiguation job queued: run_id=%s, pmids=%d", run_id, len(parsed_pmids))
+        return RedirectResponse(url=f"/runs/{run_id}/progress", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        _update_disambiguation_job(
+            run_id,
+            status="failed",
+            phase="Failed",
+            error_message=str(exc),
+        )
         _update_usage_safe(
             usage_record_id,
             run_id=run_id,
-            status=("completed_with_errors" if errors else "completed"),
-            error_message="; ".join(errors),
-            citation_count=len(citations),
-            error_count=len(errors),
-        )
-
-        if perf_enabled:
-            logger.info(
-                (
-                    "perf disambiguate run_id=%s input_pmids=%d user_chunks=%d litsense_extra_pmids=%d "
-                    "litsense_chunks=%d ncbi_fetch_workers=%d citations=%d eligible_matches=%d all_matches=%d clusters=%d "
-                    "user_pubmed_fetch_seconds=%.3f litsense_query_seconds=%.3f "
-                    "litsense_pubmed_fetch_seconds=%.3f sanitize_seconds=%.3f "
-                    "orcid_identifier_seconds=%.3f filter_seconds=%.3f "
-                    "build_clusters_seconds=%.3f orcid_affiliation_seconds=%.3f "
-                    "render_context_seconds=%.3f save_run_seconds=%.3f total_seconds=%.3f"
-                ),
-                run_id,
-                len(parsed_pmids),
-                user_chunk_count,
-                len(litsense_extra_pmids),
-                litsense_chunk_count,
-                NCBI_FETCH_WORKERS,
-                len(citations),
-                len(eligible_matches),
-                len(all_matches),
-                len(clusters),
-                user_pubmed_fetch_seconds,
-                litsense_query_seconds,
-                litsense_pubmed_fetch_seconds,
-                sanitize_seconds,
-                orcid_identifier_seconds,
-                filter_seconds,
-                build_clusters_seconds,
-                orcid_affiliation_seconds,
-                render_context_seconds,
-                save_run_seconds,
-                time.perf_counter() - disambiguate_started_at,
-            )
-
-        return templates.TemplateResponse(
-            request,
-            "disambiguate.html",
-            {
-                "run_id": run_id,
-                "author_name": author_name,
-                "target_orcid": target_orcid,
-                "start_year": window_start,
-                "end_year": window_end,
-                "year_window_label": _year_window_label(window_start, window_end),
-                "clusters": clusters,
-                "cluster_citation_rows": cluster_citation_rows,
-                "cluster_affiliation_display_rows": cluster_affiliation_display_rows,
-                "errors": errors,
-                "missing_affiliation_rows": missing_affiliation_rows,
-                "excluded_citation_rows": excluded_citation_rows,
-                "excluded_citation_rows_by_type": excluded_citation_rows_by_type,
-                "excluded_citation_rows_by_window": excluded_citation_rows_by_window,
-                "excluded_citation_rows_other": excluded_citation_rows_other,
-                "selected_excluded_pmids": [],
-                "excluded_out_of_window": excluded_out_of_window,
-                "excluded_by_type": excluded_by_type,
-                "extra_excluded_types": extra_excluded_types,
-                "orcid_sync_error": orcid_sync_error,
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
-        _update_usage_safe(
-            usage_record_id,
             status="failed",
             error_message=str(exc),
         )
-        raise
-    finally:
         DISAMBIGUATION_SEMAPHORE.release()
+        raise
 
 
 @app.post("/citation-select", response_class=HTMLResponse)
@@ -2488,59 +2808,12 @@ def citation_select(
     selected = set(selected_cluster_ids)
     forced_excluded_pmids = set(selected_excluded_pmids)
     if not selected:
-        eligible_citations = [citation for citation in run.citations if citation.pmid not in run.excluded_pmids]
-        eligible_matches = [match for match in run.matches if match.pmid not in run.excluded_pmids]
-        cluster_citation_rows = _build_cluster_citation_rows(
-            citations=eligible_citations,
-            matches=eligible_matches,
-            orcid_identifier_matches=run.orcid_identifier_matches,
-            orcid_affiliation_matches=run.orcid_affiliation_matches,
-            target_orcid=run.target_orcid,
-        )
-        cluster_orcid_affiliation_matches = _build_cluster_orcid_affiliation_matches(cluster_citation_rows)
-        cluster_affiliation_display_rows = _build_cluster_affiliation_display_rows(
-            clusters=run.clusters,
-            cluster_orcid_affiliation_matches=cluster_orcid_affiliation_matches,
-            target_orcid=run.target_orcid,
-        )
-        excluded_citation_rows = _build_excluded_citation_rows(
-            citations=run.citations,
-            excluded_pmids=run.excluded_pmids,
-            excluded_reasons=run.excluded_reasons,
-            matches=run.matches,
-            orcid_identifier_matches=run.orcid_identifier_matches,
-            orcid_affiliation_matches=run.orcid_affiliation_matches,
-            target_orcid=run.target_orcid,
-        )
-        (
-            excluded_citation_rows_by_type,
-            excluded_citation_rows_by_window,
-            excluded_citation_rows_other,
-        ) = _partition_excluded_citation_rows(excluded_citation_rows)
-        return templates.TemplateResponse(
+        return _render_disambiguation_result(
             request,
-            "disambiguate.html",
-            {
-                "run_id": run_id,
-                "author_name": run.author_name,
-                "target_orcid": run.target_orcid,
-                "start_year": run.start_year,
-                "end_year": run.end_year,
-                "year_window_label": _year_window_label(run.start_year, run.end_year),
-                "clusters": run.clusters,
-                "cluster_citation_rows": cluster_citation_rows,
-                "cluster_affiliation_display_rows": cluster_affiliation_display_rows,
-                "errors": ["Select at least one author identity cluster."],
-                "missing_affiliation_rows": [],
-                "excluded_citation_rows": excluded_citation_rows,
-                "excluded_citation_rows_by_type": excluded_citation_rows_by_type,
-                "excluded_citation_rows_by_window": excluded_citation_rows_by_window,
-                "excluded_citation_rows_other": excluded_citation_rows_other,
-                "selected_excluded_pmids": sorted(forced_excluded_pmids),
-                "excluded_out_of_window": 0,
-                "excluded_by_type": 0,
-                "orcid_sync_error": run.orcid_sync_error,
-            },
+            run=run,
+            run_id=run_id,
+            errors=["Select at least one author identity cluster."],
+            selected_excluded_pmids=forced_excluded_pmids,
             status_code=400,
         )
 
