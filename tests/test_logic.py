@@ -746,6 +746,56 @@ def test_cluster_affiliation_labels_keep_company_name_with_therapeutics_suffix()
     assert "Boston" not in labels
 
 
+def test_cluster_affiliation_labels_keep_company_name_with_medicines_suffix() -> None:
+    target = parse_target_name("Wu, Hsin-Jung")
+    citations = [
+        _citation(
+            "701",
+            2023,
+            [
+                _author(
+                    1,
+                    "Wu",
+                    "Hsin-Jung",
+                    "HJ",
+                    "Blueprint Medicines, Cambridge, MA 02139, USA.",
+                )
+            ],
+        ),
+    ]
+
+    clusters, _ = build_clusters(citations, target)
+
+    labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
+    assert "Blueprint Medicines" in labels
+    assert "Cambridge" not in labels
+
+
+def test_cluster_affiliation_labels_strip_attached_grid_artifact_from_university_name() -> None:
+    target = parse_target_name("Wu, Hsin-Jung")
+    citations = [
+        _citation(
+            "702",
+            2022,
+            [
+                _author(
+                    1,
+                    "Wu",
+                    "Hsin-Jung Joyce",
+                    "HJ",
+                    "Department of Immunobiology, University of Arizonagrid. College of Medicine-Tucson, Tucson, Arizona, USA.",
+                )
+            ],
+        ),
+    ]
+
+    clusters, _ = build_clusters(citations, target)
+
+    labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
+    assert "University of Arizona" in labels
+    assert "Arizonagrid" not in labels
+
+
 def test_cluster_affiliation_labels_ignore_location_only_and_contribution_note_text() -> None:
     target = parse_target_name("Peter Sage")
     citations = [

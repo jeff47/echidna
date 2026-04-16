@@ -1139,6 +1139,9 @@ def _normalize_affiliation_text(value: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = _strip_affiliation_identifiers(cleaned)
+    # Some PubMed/PMC affiliation strings concatenate a stripped GRID marker
+    # directly onto institution text (e.g. "University of Arizonagrid. College").
+    cleaned = re.sub(r"(?<=[A-Za-z])grid\.(?=\s+[A-Z])", " ", cleaned, flags=re.IGNORECASE)
     cleaned = _strip_leading_numeric_marker_clusters(cleaned)
     cleaned = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", cleaned)
     cleaned = _strip_segment_prefix_markers(cleaned)

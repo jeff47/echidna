@@ -58,6 +58,20 @@ SECONDARY_INSTITUTION_HINTS = (
     "medicine",
     "foundation",
 )
+COMPANY_HINT_WORDS = {
+    "biologics",
+    "biopharma",
+    "biopharmaceuticals",
+    "biosciences",
+    "biotech",
+    "biotherapeutics",
+    "diagnostics",
+    "genomics",
+    "medicines",
+    "pharmaceuticals",
+    "pharma",
+    "therapeutics",
+}
 UNIT_WORDS = (
     "department",
     "departments",
@@ -93,6 +107,7 @@ ORG_SUFFIX_WORDS = {
     "ag",
     "bv",
     "plc",
+    "medicines",
     "pharmaceuticals",
     "therapeutics",
     "biotherapeutics",
@@ -217,6 +232,7 @@ LITERAL_INSTITUTION_SUFFIXES = (
     "College of Pharmacy and Health Sciences",
     "University School of Medicine",
     "School of Public Health",
+    "Medicines",
     "Pharmaceuticals",
     "Therapeutics",
     "Biotherapeutics",
@@ -1195,6 +1211,10 @@ def _extract_institution_names(affiliation: str, *, us_system_context: set[str] 
     if literal_names:
         return _append_non_us_country_suffix(literal_names, raw_affiliation)
 
+    company_like_label = _infer_company_like_institution_label(raw_affiliation)
+    if company_like_label:
+        return _append_non_us_country_suffix([company_like_label], raw_affiliation)
+
     return []
 
 
@@ -1321,6 +1341,53 @@ def _grid_signal_candidates(value: str) -> list[str]:
 def _contains_institution_marker(value: str) -> bool:
     tokens = set(re.findall(r"[a-z0-9]+", normalize_text(value)))
     return bool(tokens & set(INSTITUTION_MARKER_WORDS))
+
+
+def _looks_like_location_tail(value: str) -> bool:
+    normalized = normalize_text(value)
+    if not normalized:
+        return False
+    if _looks_like_geo_only_phrase(normalized):
+        return True
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if not tokens:
+        return False
+    geo_like = 0
+    for token in tokens:
+        if token in US_STATE_CODES or token in GEO_TOKENS or POSTAL_CODE_TOKEN.fullmatch(token):
+            geo_like += 1
+    return geo_like >= max(1, len(tokens) // 2)
+
+
+def _infer_company_like_institution_label(value: str) -> str:
+    clauses = [_normalize_institution_label(part) for part in re.split(r"[,;|]+", value) if _normalize_institution_label(part)]
+    if not clauses:
+        return ""
+
+    first_clause = clauses[0]
+    normalized_first = normalize_text(first_clause)
+    if not normalized_first:
+        return ""
+    if UNIT_PREFIX_PATTERN.match(normalized_first):
+        return ""
+    if _looks_like_geo_only_phrase(normalized_first):
+        return ""
+
+    tokens = [normalize_token(token) for token in re.findall(r"[A-Za-z0-9]+", first_clause)]
+    tokens = [token for token in tokens if token]
+    if len(tokens) < 2 or len(tokens) > 6:
+        return ""
+    if any(token in LITERAL_INSTITUTION_BLOCKED_LABEL_TOKENS for token in tokens):
+        return ""
+    if any(token in GENERIC_INSTITUTION_TOKENS for token in tokens):
+        return ""
+
+    has_company_hint = any(token in COMPANY_HINT_WORDS for token in tokens)
+    tail = ", ".join(clauses[1:])
+    if not has_company_hint and not _looks_like_location_tail(tail):
+        return ""
+
+    return first_clause
 
 
 def _conjunction_split_candidates(value: str) -> list[str]:
@@ -1676,6 +1743,7 @@ def _normalize_texas_a_and_m_label(value: str) -> str:
 def _normalize_institution_label(clause: str) -> str:
     cleaned = APOSTROPHE_VARIANTS.sub("'", clause)
     cleaned = AMPERSAND.sub(" and ", cleaned)
+    cleaned = re.sub(r"(?<=[A-Za-z])grid\.(?=\s+[A-Z])", " ", cleaned, flags=re.IGNORECASE)
     cleaned = _normalize_texas_a_and_m_label(cleaned)
     return _clean_clause_label(cleaned)
 

@@ -207,6 +207,14 @@ def test_normalize_affiliation_text_preserves_text_after_trimmed_grid_tail() -> 
     assert "grid.38142.3c000000041936754" not in normalized
 
 
+def test_normalize_affiliation_text_removes_attached_grid_artifact_from_institution_name() -> None:
+    raw = "Department of Immunobiology, University of Arizonagrid. College of Medicine-Tucson, Tucson, Arizona, USA."
+    normalized = _normalize_affiliation_text(raw)
+
+    assert "Arizonagrid" not in normalized
+    assert "University of Arizona College of Medicine-Tucson" in normalized
+
+
 def test_normalize_affiliation_text_removes_single_letter_prefix_with_space() -> None:
     raw = "a Hospital for Special Surgery, Department of Rheumatology, E 70 th St, New York, NY 10021"
     normalized = _normalize_affiliation_text(raw)
