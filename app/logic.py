@@ -2033,13 +2033,20 @@ def format_summary(
     first_senior = [r for r in overall_included if r.counted_first or r.counted_senior]
     review_senior_total = sum(1 for r in included if r.counted_review_senior)
     preprint_total = sum(1 for r in included if r.is_preprint)
+    superseded_preprint_total = sum(1 for r in rows if r.preprint_superseded_by)
     detail = _first_senior_detail(first_senior)
-    return (
+    summary = (
         f"Peer-reviewed Publications ({window_label}): {total} total, "
         f"{len(first_senior)} 1st/Sr author ({detail}). "
         f"In addition: {review_senior_total} review(s) as Sr author; "
         f"{preprint_total} preprint(s)."
     )
+    if superseded_preprint_total:
+        summary += (
+            f" Excluded as superseded by a peer-reviewed version: "
+            f"{superseded_preprint_total} preprint(s)."
+        )
+    return summary
 
 
 def _first_senior_detail(rows: list[ReportRow]) -> str:

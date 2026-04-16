@@ -548,7 +548,11 @@ def _with_row_render_fields(
                     else (
                         "included (preprint separate)"
                         if row.include and not row.counted_overall and row.is_preprint
-                        else ("included" if row.include else "excluded")
+                        else (
+                            "excluded (superseded preprint)"
+                            if row.preprint_superseded_by
+                            else ("included" if row.include else "excluded")
+                        )
                     )
                 ),
             }

@@ -1029,6 +1029,7 @@ def test_superseded_preprint_is_skipped_when_peer_reviewed_version_is_present() 
     summary = format_summary(result.rows, 2021, 2026)
     assert "1 total" in summary
     assert "0 preprint(s)" in summary
+    assert "Excluded as superseded by a peer-reviewed version: 1 preprint(s)." in summary
 
 
 def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:

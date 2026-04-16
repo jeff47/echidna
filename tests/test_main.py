@@ -387,6 +387,7 @@ def test_with_row_render_fields_adds_superseded_preprint_note() -> None:
     )
 
     assert "Preprint skipped: superseded by peer-reviewed PMID(s): 38821936" in str(rows[0]["notes"])
+    assert rows[0]["status_label"] == "excluded (superseded preprint)"
 
 
 def test_fetch_citation_chunks_parallel_preserves_chunk_order(monkeypatch) -> None:
