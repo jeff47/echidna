@@ -301,6 +301,37 @@ def test_replace_authors_from_pmc_prefers_pmc_author_list() -> None:
     assert citation.authors[0].affiliation == "Institute A"
 
 
+def test_replace_authors_from_pmc_preserves_better_pubmed_person_name_fields() -> None:
+    client = NcbiClient()
+    citation = Citation(
+        pmid="40307450",
+        pmcid="PMC12990214",
+        title="x",
+        journal="y",
+        print_year=2025,
+        print_date="2025",
+        authors=[_author(1, "Wu", "Hsin-Jung Joyce", "HJ", "")],
+        source_for_roles="pmc",
+    )
+    pmc_authors = [
+        _author(1, "Joyce Wu", "Hsin-Jung", "HJ", "Institute A"),
+    ]
+    pubmed_authors = [
+        _author(1, "Wu", "Hsin-Jung Joyce", "HJ", ""),
+    ]
+
+    changed = client._replace_authors_from_pmc(
+        citation,
+        pmc_authors,
+        pubmed_authors=pubmed_authors,
+    )
+
+    assert changed is True
+    assert citation.authors[0].last_name == "Wu"
+    assert citation.authors[0].fore_name == "Hsin-Jung Joyce"
+    assert citation.authors[0].affiliation == "Institute A"
+
+
 def test_fill_missing_affiliations_from_pubmed_after_pmc_replace() -> None:
     client = NcbiClient()
     citation = Citation(

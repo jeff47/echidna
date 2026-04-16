@@ -178,7 +178,11 @@ class NcbiClient:
                     )
                 citation.co_first_positions = co_first
                 citation.co_senior_positions = co_senior
-                used_pmc_authors = self._replace_authors_from_pmc(citation, pmc_authors)
+                used_pmc_authors = self._replace_authors_from_pmc(
+                    citation,
+                    pmc_authors,
+                    pubmed_authors=pubmed_authors,
+                )
                 if used_pmc_authors:
                     citation.notes.append("Author metadata sourced from PMC")
                     filled = self._fill_missing_affiliations_from_pubmed(citation, pubmed_authors)
@@ -567,12 +571,28 @@ class NcbiClient:
             filled += 1
         return filled
 
-    def _replace_authors_from_pmc(self, citation: Citation, pmc_authors: list[Author]) -> bool:
+    def _replace_authors_from_pmc(
+        self,
+        citation: Citation,
+        pmc_authors: list[Author],
+        *,
+        pubmed_authors: list[Author] | None = None,
+    ) -> bool:
         if not pmc_authors:
             return False
         non_empty_names = sum(1 for author in pmc_authors if author.last_name.strip())
         if non_empty_names == 0:
             return False
+        if pubmed_authors:
+            pubmed_by_position = {author.position: author for author in pubmed_authors}
+            reconciled_authors: list[Author] = []
+            for pmc_author in pmc_authors:
+                pubmed_author = pubmed_by_position.get(pmc_author.position)
+                if pubmed_author is None:
+                    reconciled_authors.append(pmc_author)
+                    continue
+                reconciled_authors.append(_reconcile_pmc_author_name(pmc_author, pubmed_author))
+            pmc_authors = reconciled_authors
         citation.authors = pmc_authors
         return True
 
@@ -1066,6 +1086,43 @@ def _authors_likely_same_person(left: Author, right: Author) -> bool:
     if left_initials and right_initials and left_initials != right_initials:
         return False
     return True
+
+
+def _reconcile_pmc_author_name(pmc_author: Author, pubmed_author: Author) -> Author:
+    pmc_last_tokens = [token for token in re.split(r"[^A-Za-z0-9]+", pmc_author.last_name) if token]
+    pubmed_last_tokens = [token for token in re.split(r"[^A-Za-z0-9]+", pubmed_author.last_name) if token]
+    pmc_last_key = _person_token(pmc_author.last_name)
+    pubmed_last_key = _person_token(pubmed_author.last_name)
+    pmc_fore_key = _person_token(pmc_author.fore_name)
+    pubmed_fore_key = _person_token(pubmed_author.fore_name)
+    pmc_initial_key = _person_token(pmc_author.initials) or _person_token(_initials_from_name(pmc_author.fore_name))
+    pubmed_initial_key = _person_token(pubmed_author.initials) or _person_token(_initials_from_name(pubmed_author.fore_name))
+
+    # Some PMC records misplace an anglicized given-name token into <surname>,
+    # while PubMed keeps the canonical family/given split.
+    should_prefer_pubmed_name = (
+        pmc_author.position == pubmed_author.position
+        and bool(pmc_initial_key)
+        and pmc_initial_key == pubmed_initial_key
+        and bool(pubmed_last_key)
+        and len(pmc_last_tokens) > len(pubmed_last_tokens)
+        and pmc_last_key.endswith(pubmed_last_key)
+        and bool(pubmed_fore_key)
+        and bool(pmc_fore_key)
+        and pubmed_fore_key.startswith(pmc_fore_key)
+    )
+    if not should_prefer_pubmed_name:
+        return pmc_author
+
+    return Author(
+        position=pmc_author.position,
+        last_name=pubmed_author.last_name,
+        fore_name=pubmed_author.fore_name,
+        initials=pubmed_author.initials or pmc_author.initials,
+        affiliation=pmc_author.affiliation,
+        affiliation_blocks=list(pmc_author.affiliation_blocks),
+        orcid=pmc_author.orcid or pubmed_author.orcid,
+    )
 
 
 def _normalize_affiliation_text(value: str) -> str:
