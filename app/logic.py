@@ -81,7 +81,24 @@ AFFILIATION_ANCHOR_WORDS = {
     "system",
     "university",
 }
-ORG_SUFFIX_WORDS = {"inc", "incorporated", "ltd", "llc", "corp", "corporation", "gmbh", "sa", "ag", "bv", "plc"}
+ORG_SUFFIX_WORDS = {
+    "inc",
+    "incorporated",
+    "ltd",
+    "llc",
+    "corp",
+    "corporation",
+    "gmbh",
+    "sa",
+    "ag",
+    "bv",
+    "plc",
+    "pharmaceuticals",
+    "therapeutics",
+    "biotherapeutics",
+    "biologics",
+    "biosciences",
+}
 UNIT_ONLY_WORDS = {
     "center",
     "centre",
@@ -200,6 +217,11 @@ LITERAL_INSTITUTION_SUFFIXES = (
     "College of Pharmacy and Health Sciences",
     "University School of Medicine",
     "School of Public Health",
+    "Pharmaceuticals",
+    "Therapeutics",
+    "Biotherapeutics",
+    "Biologics",
+    "Biosciences",
     "Incorporated",
     "Corporation",
     "State University",

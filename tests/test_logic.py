@@ -708,6 +708,44 @@ def test_cluster_affiliation_labels_keep_company_name_without_city_state() -> No
     assert "Yale University" in labels
 
 
+def test_cluster_affiliation_labels_keep_company_name_with_therapeutics_suffix() -> None:
+    target = parse_target_name("Wu, Hsin-Jung")
+    citations = [
+        _citation(
+            "601",
+            2025,
+            [
+                _author(
+                    1,
+                    "Wu",
+                    "Hsin-Jung",
+                    "HJ",
+                    "Tango Therapeutics, Boston, Massachusetts.",
+                )
+            ],
+        ),
+        _citation(
+            "602",
+            2025,
+            [
+                _author(
+                    1,
+                    "Wu",
+                    "Hsin-Jung",
+                    "HJ",
+                    "Tango Therapeutics, Boston, USA",
+                )
+            ],
+        ),
+    ]
+
+    clusters, _ = build_clusters(citations, target)
+
+    labels = " | ".join(value for cluster in clusters for value in cluster.affiliations)
+    assert "Tango Therapeutics" in labels
+    assert "Boston" not in labels
+
+
 def test_cluster_affiliation_labels_ignore_location_only_and_contribution_note_text() -> None:
     target = parse_target_name("Peter Sage")
     citations = [
