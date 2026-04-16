@@ -762,6 +762,22 @@ def _looks_like_initial_token(token: str) -> bool:
         return True
     return token.isupper() or "." in token or len(cleaned) <= 2
 
+
+def _surname_tokens(value: str) -> list[str]:
+    return [token for token in re.split(r"[^A-Za-z0-9]+", value) if token]
+
+
+def _surname_matches(author_last_name: str, target_surname: str) -> bool:
+    normalized_author = normalize_token(author_last_name)
+    if normalized_author == target_surname:
+        return True
+
+    parts = _normalized_name_tokens(_surname_tokens(author_last_name))
+    if len(parts) > 1 and parts[-1] == target_surname:
+        return True
+
+    return False
+
 def parse_pmids(raw_text: str) -> list[str]:
     candidates = re.findall(r"\d+", raw_text)
     seen: set[str] = set()
@@ -928,7 +944,7 @@ def match_author(
                 return True, "orcid"
             return False, None
 
-    if normalize_token(author.last_name) != target.surname:
+    if not _surname_matches(author.last_name, target.surname):
         return False, None
 
     author_given = normalize_text(author.fore_name)

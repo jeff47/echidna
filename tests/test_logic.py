@@ -115,6 +115,15 @@ def test_full_name_style_ignores_input_punctuation_for_match() -> None:
     assert method == "given"
 
 
+def test_full_name_style_matches_compound_surname_suffix_from_metadata() -> None:
+    target = parse_target_name("Wu, Hsin-Jung")
+    author = _author(1, "Joyce Wu", "Hsin-Jung", "HJ", "Inst")
+    matched, method = match_author(author, target)
+
+    assert matched is True
+    assert method == "given"
+
+
 def test_parse_target_orcid_accepts_normalized_and_url_forms() -> None:
     assert parse_target_orcid("0000-0002-1825-0097") == "0000-0002-1825-0097"
     assert parse_target_orcid("https://orcid.org/0000-0002-1825-0097") == "0000-0002-1825-0097"
