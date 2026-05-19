@@ -1131,18 +1131,31 @@ def test_superseded_preprint_is_skipped_when_peer_reviewed_version_is_present() 
 
 def test_format_summary_includes_first_senior_journal_year_subtotals() -> None:
     rows = [
-        # Included first/senior rows
+        # Included first/senior rows — both high-profile journals
         _row_summary("Nat Immunol", 2025, counted_overall=True, counted_first=True, counted_senior=False),
         _row_summary("Nat Immunol", 2026, counted_overall=True, counted_first=False, counted_senior=True),
-        _row_summary("JCI Insight", 2022, counted_overall=True, counted_first=True, counted_senior=False),
-        _row_summary("JCI Insight", 2025, counted_overall=True, counted_first=False, counted_senior=True),
+        _row_summary("J Exp Med", 2022, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("J Exp Med", 2025, counted_overall=True, counted_first=False, counted_senior=True),
         # Included but not first/senior
         _row_summary("Cell", 2024, counted_overall=True, counted_first=False, counted_senior=False),
     ]
     summary = format_summary(rows, 2021, 2026)
     assert "5 total, 4 1st/Sr author" in summary
-    assert "2 JCI Insight 2022, 2025" in summary
+    assert "2 J Exp Med 2022, 2025" in summary
     assert "2 Nat Immunol 2025, 2026" in summary
+
+
+def test_format_summary_rolls_up_non_high_profile_journals() -> None:
+    rows = [
+        _row_summary("Nat Immunol", 2025, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("JCI Insight", 2022, counted_overall=True, counted_first=True, counted_senior=False),
+        _row_summary("Front Immunol", 2024, counted_overall=True, counted_first=True, counted_senior=False),
+    ]
+    summary = format_summary(rows, 2021, 2026)
+    assert "1 Nat Immunol 2025" in summary
+    assert "2 other" in summary
+    assert "JCI Insight" not in summary
+    assert "Front Immunol" not in summary
 
 
 def test_format_summary_uses_nx_year_for_duplicate_journal_years() -> None:

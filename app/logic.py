@@ -2155,6 +2155,41 @@ def format_summary(
     return summary
 
 
+# PubMed ISO abbreviations for journals shown individually in the summary detail.
+# All other 1st/Sr author publications are rolled up as "N other".
+_HIGH_PROFILE_JOURNALS: frozenset[str] = frozenset({
+    # Top-tier generalists
+    "Nature",
+    "Science",
+    "Cell",
+    "N Engl J Med",
+    "Lancet",
+    "JAMA",
+    "Nat Med",
+    "Nat Immunol",
+    "Nat Biotechnol",
+    "Nat Genet",
+    "Nat Cell Biol",
+    "Cell Host Microbe",
+    "Cell Rep",
+    "Nat Commun",
+    "Sci Transl Med",
+    "Sci Immunol",
+    "Proc Natl Acad Sci U S A",
+    # High-profile immunology-specific
+    "Immunity",
+    "J Exp Med",
+    "J Clin Invest",
+    "J Immunol",
+})
+
+_HIGH_PROFILE_JOURNALS_LOWER: frozenset[str] = frozenset(j.lower() for j in _HIGH_PROFILE_JOURNALS)
+
+
+def _is_high_profile(journal: str) -> bool:
+    return journal.lower() in _HIGH_PROFILE_JOURNALS_LOWER
+
+
 def _first_senior_detail(rows: list[ReportRow]) -> str:
     if not rows:
         return "none"
@@ -2168,8 +2203,13 @@ def _first_senior_detail(rows: list[ReportRow]) -> str:
             grouped[row.citation.journal].append(-1)
 
     parts: list[str] = []
+    other_count = 0
     # Sort by descending count then journal name for deterministic output.
     for journal, years in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0].lower())):
+        if not _is_high_profile(journal):
+            other_count += len(years)
+            continue
+
         count = len(years)
         year_counts: dict[int, int] = defaultdict(int)
         unknown_year_count = 0
@@ -2197,4 +2237,8 @@ def _first_senior_detail(rows: list[ReportRow]) -> str:
             parts.append(f"{count} {journal} {year_text}")
         else:
             parts.append(f"{count} {journal}")
-    return "; ".join(parts)
+
+    if other_count:
+        parts.append(f"{other_count} other")
+
+    return "; ".join(parts) if parts else "none"
