@@ -1,0 +1,4 @@
+echidna.jeffrice.net {
+    tls /etc/caddy/certs/origin-cert.pem /etc/caddy/certs/origin-key.pem
+    reverse_proxy echidna_proxy:8080
+}

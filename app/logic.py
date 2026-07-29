@@ -2185,9 +2185,18 @@ _HIGH_PROFILE_JOURNALS: frozenset[str] = frozenset({
 
 _HIGH_PROFILE_JOURNALS_LOWER: frozenset[str] = frozenset(j.lower() for j in _HIGH_PROFILE_JOURNALS)
 
+_JOURNAL_DISPLAY_NAMES: dict[str, str] = {
+    "Proc Natl Acad Sci U S A": "PNAS",
+}
+_JOURNAL_DISPLAY_NAMES_LOWER: dict[str, str] = {k.lower(): v for k, v in _JOURNAL_DISPLAY_NAMES.items()}
+
 
 def _is_high_profile(journal: str) -> bool:
     return journal.lower() in _HIGH_PROFILE_JOURNALS_LOWER
+
+
+def _journal_display_name(journal: str) -> str:
+    return _JOURNAL_DISPLAY_NAMES_LOWER.get(journal.lower(), journal)
 
 
 def _first_senior_detail(rows: list[ReportRow]) -> str:
@@ -2232,11 +2241,12 @@ def _first_senior_detail(rows: list[ReportRow]) -> str:
             else:
                 year_tokens.append("n/a")
 
+        display = _journal_display_name(journal)
         if year_tokens:
             year_text = ", ".join(year_tokens)
-            parts.append(f"{count} {journal} {year_text}")
+            parts.append(f"{count} {display} {year_text}")
         else:
-            parts.append(f"{count} {journal}")
+            parts.append(f"{count} {display}")
 
     if other_count:
         parts.append(f"{other_count} other")
